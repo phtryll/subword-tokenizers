@@ -1,3 +1,5 @@
+from .trie_wp import WPTrie
+
 class WPTrie_E2E(WPTrie):
 
     def __init__(self, vocab={}):
