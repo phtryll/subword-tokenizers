@@ -1,7 +1,7 @@
 from .subword_tokenizer import SubwordTokenizer
 from .trie import Trie
 
-class TrieBPE(SubwordTokenizer):
+class FastBPE(SubwordTokenizer):
     """Fast Byte-Pair Encoding with greedy longest-match via a trie: O(n)."""
     def __init__(self, tokenizer, verbose: bool = False):
         super().__init__(tokenizer)
