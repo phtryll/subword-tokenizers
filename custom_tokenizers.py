@@ -192,8 +192,8 @@ class TrieNode(defaultdict):
     """
     __slots__ = ("token",)
 
-    def __init__(self):
-        super().__init__(TrieNode)
+    def __init__(self, default_factory=None, *args, **kwargs):
+        super().__init__(TrieNode, *args, **kwargs)
         # If this node marks the end of valid token, store it here
         self.token: Optional[str] = None
 
