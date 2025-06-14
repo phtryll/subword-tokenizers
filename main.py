@@ -10,7 +10,7 @@ import pickle
 
 if __name__ == "__main__":
     # Define supported models
-    supported_models = {"TrieBPE", "NaiveBPE", "NaiveWP", "FastWP", "Fast_WP_E2E"}
+    supported_models = {"FastBPE", "NaiveBPE", "NaiveWP", "FastWP", "Fast_WP_E2E"}
 
     parser = argparse.ArgumentParser(
         description=(
@@ -21,10 +21,10 @@ if __name__ == "__main__":
         epilog=(
             "Examples:\n"
             "  Train models:\n"
-            "    python main.py --models TrieBPE NaiveBPE \\\n"
+            "    python main.py --models FastBPE NaiveBPE \\\n"
             "      --train --max-vocab 5000 --train-data data/raw/train.txt --merges\n\n"
             "  Tokenize a single string:\n"
-            "    python main.py --models TrieBPE --tokenize \"Hello world\"\n\n"
+            "    python main.py --models FastBPE --tokenize \"Hello world\"\n\n"
             "  Batch tokenize from file:\n"
             "    python main.py --models NaiveBPE --tokenize data/raw/test.txt\n"
         )
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     # Instantiate shared HF tokenizer and model registry
     hf_tok = AutoTokenizer.from_pretrained("bert-base-uncased")
     MODEL_REGISTRY = {
-        "TrieBPE": TrieBPE,
+        "FastBPE": FastBPE,
         "NaiveBPE": NaiveBPE,
         "NaiveWP": NaiveWP,
         "FastWP": FastWP,

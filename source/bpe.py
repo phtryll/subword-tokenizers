@@ -151,28 +151,17 @@ class NaiveBPE(SubwordTokenizer):
         self.vocab.clear()
         self.corpus_as_symbols.clear()
 
-
-class TrieBPE(SubwordTokenizer):
+class FastBPE(NaiveBPE):
     """
     A subword tokenizer using Byte-Pair Encoding (BPE) with Trie-based lookup.
-
     Learns merges from a training corpus and uses a Trie for greedy longest-prefix
     matching during tokenization.
     """
-    def __init__(self, tokenizer, verbose: bool = False):
+    def __init__(self, tokenizer: PreTrainedTokenizerFast) -> None:
         super().__init__(tokenizer)
-        self.verbose: bool = verbose
-        self.logs: List[str] = []
-        self.merges: List[Tuple[str, str]] = []  # history of merges
-        self.vocab: set[str] = set()
         self.trie = Trie()  # built in training
-        # for lazy/incremental loading
-        self.temp_corpus: List[List[str]] = []
-        self.pair_freq: Counter[Tuple[str,str]] = Counter()
-        self.pair_pos: Dict[Tuple[str,str], List[Tuple[int,int]]] = defaultdict(list)
-        self.heap: List[Tuple[int, Tuple[str,str]]] = []
 
-    def train(self, corpus: List[str], max_vocab: int = 30_000):
+    def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
         """
         Train the BPE tokenizer on the input corpus.
 
@@ -180,99 +169,11 @@ class TrieBPE(SubwordTokenizer):
             corpus (List[str]): A list of strings to learn subword merges from.
             max_vocab (int): The maximum size of the subword vocabulary.
         """
-        # 1. Input validation
-        if not isinstance(corpus, list) or not all(isinstance(x, str) for x in corpus):
-            raise TypeError("Corpus must be a list of strings.")
-        if not isinstance(max_vocab, int):
-            raise TypeError("max_vocab must be an integer")
-
-        # 2. Preprocess corpus into character sequences
-        prepared = super().preprocessing(corpus)
-        # Accumulate corpus in a lazy way
-        new_corpus = [list(word) for example in prepared for word, _ in example]
-        start_idx = len(self.temp_corpus)
-        self.temp_corpus.extend(new_corpus)
-
-        # 3. Initialize vocabulary from single characters
-        self.vocab.update({ch for word in new_corpus for ch in word})
-
-        # 4. Update symbol pair freqs/positions
-        for w_offset, word in enumerate(new_corpus, start=start_idx):
-            for p_idx in range(len(word)-1):
-                pair = (word[p_idx], word[p_idx+1])
-                self.pair_freq[pair] += 1
-                self.pair_pos[pair].append((w_offset, p_idx))
-
-        # 5. Build or update heap of symbol pairs by frequency
-        if not self.heap:
-            self.heap = [(-freq, pair) for pair, freq in self.pair_freq.items()]
-            heapq.heapify(self.heap)
-        else:
-            for pair, freq in self.pair_freq.items():
-                heapq.heappush(self.heap, (-freq, pair))
-
-        if self.verbose:
-            print(f"[TRAIN] starting merges at heap size {len(self.heap)}")
-
-        # 6. Iteratively perform merges
-        while len(self.vocab) < max_vocab and self.heap:
-            # 6.1 Skip invalid pairs
-            freq_neg, pair = heapq.heappop(self.heap)
-            freq = -freq_neg
-            # Skip stale entries or pairs too rare
-            if self.pair_freq.get(pair, 0) != freq:
-                if self.verbose:
-                    self.logs.append(f"Skipping {pair} (stale or freq<2)")
-                continue
-            if freq < 2:
-                break
-
-            # 6.2 Merge most frequent pair and update vocabulary
-            a, b = pair
-            new_sym = a + b  # merged token
-            self.vocab.add(new_sym)
-            self.merges.append(pair)
-
-            if self.verbose:
-                print(f"[MERGE] {pair} -> '{new_sym}', freq={freq}, vocab -> {len(self.vocab)}")
-
-            # 6.3 Update affected words and pair frequencies
-            for w_idx, p_idx in self.pair_pos[pair]:
-                word = self.temp_corpus[w_idx]
-                # Skip if the word has changed already
-                if p_idx >= len(word) - 1 or (word[p_idx], word[p_idx + 1]) != pair:
-                    continue
-                # Remember neighboring pairs before replacement
-                left_pair = (word[p_idx - 1], word[p_idx]) if p_idx > 0 else None
-                right_pair = (word[p_idx + 1], word[p_idx + 2]) if p_idx + 2 < len(word) else None
-                # Replace the two symbols with the merged symbol
-                word[p_idx: p_idx + 2] = [new_sym]
-                # Decrement counts for old neighbor pairs
-                for old in (left_pair, pair, right_pair):
-                    if old:
-                        self.pair_freq[old] -= 1
-                # Increment counts for newly-formed neighbor pairs
-                new_left = (word[p_idx - 1], word[p_idx]) if p_idx > 0 else None
-                new_right = (word[p_idx], word[p_idx + 1]) if p_idx + 1 < len(word) else None
-                for new in (new_left, new_right):
-                    if new:
-                        self.pair_freq[new] += 1
-                        heapq.heappush(self.heap, (-self.pair_freq[new], new))
-                        self.pair_pos[new].append((w_idx, p_idx - 1 if new == new_left else p_idx))
-            # Mark this pair as consumed
-            self.pair_freq[pair] = 0
-            self.pair_pos.pop(pair, None)
-
-        if self.verbose:
-            print(f"[TRAIN] completed {len(self.merges)} merges. Final vocabulary size: {len(self.vocab)}")
-
-        # 7. Build Trie for encoding
-        for tok in self.vocab:
-            # Each tok is a string; insert its character sequence
-            self.trie.insert(list(tok), tok)
-
-        if self.verbose:
-            print("[TRAIN] Trie built for encoding.")
+        super().train(corpus, max_vocab)
+        # Build Trie over vocabulary
+        self.trie = Trie()
+        for token in self.vocab:
+            self.trie.insert(list(token), token)
 
     def _encode_seq(self, seq: List[str]) -> List[str]:
         """
@@ -307,7 +208,11 @@ class TrieBPE(SubwordTokenizer):
         Returns:
             List[str]: The subword tokens representing the input word.
         """
-        return self._encode_seq(list(word))
+        # Try fast matching first
+        out = self._encode_seq(list(word))
+        if any(tok not in self.vocab for tok in out):
+            return super().encode_word(word)
+        return out
 
     def tokenize(self, text: str) -> List[str]:
         """
@@ -329,12 +234,6 @@ class TrieBPE(SubwordTokenizer):
     def reset(self) -> None:
         """Reset all learned state."""
         # Clear BPE state
-        self.temp_corpus.clear()
-        self.pair_freq.clear()
-        self.pair_pos.clear()
-        self.heap.clear()
-        self.vocab.clear()
-        self.merges.clear()
-        self.logs.clear()
+        super().reset()
         # Rebuild an empty trie
         self.trie = Trie()
