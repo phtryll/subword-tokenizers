@@ -157,6 +157,10 @@ class TrieBPE(SubwordTokenizer):
         self.vocab: set[str] = set()
         self.trie = Trie()  # built in training
         # for lazy/incremental loading
+        self.temp_corpus: List[List[str]] = []
+        self.pair_freq: Counter[Tuple[str,str]] = Counter()
+        self.pair_pos: Dict[Tuple[str,str], List[Tuple[int,int]]] = defaultdict(list)
+        self.heap: List[Tuple[int, Tuple[str,str]]] = []
 
     def train(self, corpus: List[str], max_vocab: int = 30_000):
         """
@@ -174,35 +178,39 @@ class TrieBPE(SubwordTokenizer):
 
         # 2. Preprocess corpus into character sequences
         prepared = super().preprocessing(corpus)
-        # Temporary corpus
-        temp_corpus = [list(word) for example in prepared for word, _ in example]
+        # Accumulate corpus in a lazy way
+        new_corpus = [list(word) for example in prepared for word, _ in example]
+        start_idx = len(self.temp_corpus)
+        self.temp_corpus.extend(new_corpus)
 
         # 3. Initialize vocabulary from single characters
-        self.vocab = {ch for word in temp_corpus for ch in word}
+        self.vocab.update({ch for word in new_corpus for ch in word})
 
-        # 4. Count initial symbol pair frequencies and positions
-        pair_freq: Counter[Tuple[str, str]] = Counter()
-        pair_pos: Dict[Tuple[str, str], List[Tuple[int, int]]] = defaultdict(list)
-        for w_idx, word in enumerate(temp_corpus):
-            for p_idx in range(len(word) - 1):
-                pair = (word[p_idx], word[p_idx + 1])
-                pair_freq[pair] += 1
-                pair_pos[pair].append((w_idx, p_idx))
+        # 4. Update symbol pair freqs/positions
+        for w_offset, word in enumerate(new_corpus, start=start_idx):
+            for p_idx in range(len(word)-1):
+                pair = (word[p_idx], word[p_idx+1])
+                self.pair_freq[pair] += 1
+                self.pair_pos[pair].append((w_offset, p_idx))
 
-        # 5. Build heap of symbol pairs by frequency
-        heap = [(-freq, pair) for pair, freq in pair_freq.items()]
-        heapq.heapify(heap)
+        # 5. Build or update heap of symbol pairs by frequency
+        if not self.heap:
+            heap = [(-freq, pair) for pair, freq in pair_freq.items()]
+            heapq.heapify(heap)
+        else:
+            for pair, freq in self.pair_freq.items()
+                heapq.heappush(self.heap, (-freq, pair))
 
         if self.verbose:
-            print(f"[TRAIN] starting merges at heap size {len(heap)}")
+            print(f"[TRAIN] starting merges at heap size {len(self.heap)}")
 
         # 6. Iteratively perform merges
-        while len(self.vocab) < max_vocab and heap:
+        while len(self.vocab) < max_vocab and self.heap:
             # 6.1 Skip invalid pairs
-            freq_neg, pair = heapq.heappop(heap)
+            freq_neg, pair = heapq.heappop(self.heap)
             freq = -freq_neg
             # Skip stale entries or pairs too rare
-            if pair_freq.get(pair, 0) != freq:
+            if self.pair_freq.get(pair, 0) != freq:
                 if self.verbose:
                     self.logs.append(f"Skipping {pair} (stale or freq<2)")
                 continue
@@ -219,7 +227,7 @@ class TrieBPE(SubwordTokenizer):
                 print(f"[MERGE] {pair} -> '{new_sym}', freq={freq}, vocab -> {len(self.vocab)}")
 
             # 6.3 Update affected words and pair frequencies
-            for w_idx, p_idx in pair_pos[pair]:
+            for w_idx, p_idx in self.pair_pos[pair]:
                 word = temp_corpus[w_idx]
                 # Skip if the word has changed already
                 if p_idx >= len(word) - 1 or (word[p_idx], word[p_idx + 1]) != pair:
@@ -242,8 +250,8 @@ class TrieBPE(SubwordTokenizer):
                         heapq.heappush(heap, (-pair_freq[new], new))
                         pair_pos[new].append((w_idx, p_idx - 1 if new is new_left else p_idx))
             # Mark this pair as consumed
-            pair_freq[pair] = 0
-            pair_pos.pop(pair, None)
+            self.pair_freq[pair] = 0
+            self.pair_pos.pop(pair, None)
 
         if self.verbose:
             print(f"[TRAIN] completed {len(self.merges)} merges. Final vocabulary size: {len(self.vocab)}")
