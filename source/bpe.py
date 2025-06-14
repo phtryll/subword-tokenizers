@@ -15,6 +15,10 @@ class NaiveBPE(SubwordTokenizer):
             tokenizer (PreTrainedTokenizerFast): A tokenizer instance for preprocessing.
         """
         super().__init__(tokenizer)
+        # for lazy/incremental training
+        self.merges_list: List[Tuple[str,str]] = []
+        self.vocab: set[str] = set()
+        self.corpus_as_symbols: List[Tuple[List[str], int]] = []
 
     def _replace_pair(self, pair: Tuple[str, str], word: List[str]) -> List[str]:
         """
@@ -61,41 +65,41 @@ class NaiveBPE(SubwordTokenizer):
         # 2. Preprocess corpus into tokens with character offsets
         processed_corpus = super().preprocessing(corpus)
 
-        # 3. Initialize vocabulary and count word frequencies
-        self.merges_list: List[Tuple[str, str]] = []
-        corpus_as_words = [word for example in processed_corpus for word, _ in example]
-        vocab = {symbol for word in corpus_as_words for symbol in word}
-        word_freqs = Counter(corpus_as_words)
+        # 3. Update vocabulary & corpus symbols with new data
+        new_words = [word for example in processed_corpus for word, _ in example]
+        # expand vocab
+        self.vocab.update({ch for w in new_words for ch in w})
+        # count new word frequencies
+        new_freqs = Counter(new_words)
+        # convert into list-of-symbols form and append
+        for word, freq in new_freqs.items():
+            symbols = [s for s in word]
+            self.corpus_as_symbols.append((symbols, freq))
+        # self.corpus_as_symbols contains past and new data now
 
-        # 4. Convert each word to a list of character symbols
-        corpus_as_symbols = [
-            ([symbol for symbol in word], frequency)
-            for word, frequency in word_freqs.items()
-        ]
-
-        # 5. Iteratively merge the most frequent symbol pairs
-        while len(vocab) < max_vocab_size:
-            # 5.1 Count symbol pair frequencies
+        # 4. Iteratively merge the most frequent symbol pairs
+        while len(self.vocab) < max_vocab_size:
+            # 4.1 Count symbol pair frequencies
             get_pair_freqs = Counter(
-                (word[0][i], word[0][i + 1])
-                for word in corpus_as_symbols
-                for i in range(len(word[0]) - 1)
-                for _ in range(word[1])
+                (seq[i], seq[i+1])
+                for seq, freq in self.corpus_as_symbols
+                for i in range(len(seq) - 1)
+                for _ in range(freq)
             )
 
-            # 5.4 Exit if no more pairs can be merged
+            # 4.1b Exit if no more pairs can be merged
             if not get_pair_freqs:
                 break
 
-            # 5.2 Find most frequent pair and merge
+            # 4.2 Find most frequent pair and merge
             most_frequent_pair = get_pair_freqs.most_common(1)[0][0]
-            vocab.add(most_frequent_pair[0] + most_frequent_pair[1])
+            self.vocab.add(most_frequent_pair[0] + most_frequent_pair[1])
             self.merges_list.append(most_frequent_pair)
 
-            # 5.3 Replace symbol pairs in corpus
-            corpus_as_symbols = [
-                (self._replace_pair(most_frequent_pair, word), frequency)
-                for word, frequency in corpus_as_symbols
+            # 4.3 Apply merge to entire corpus
+            self.corpus_as_symbols = [
+                (self._replace_pair(most_frequent_pair, seq), freq)
+                for seq, freq in self.corpus_as_symbols
             ]
 
     def encode_word(self, word: str) -> List[str]:
@@ -140,6 +144,12 @@ class NaiveBPE(SubwordTokenizer):
 
         # 5. Flatten the list of subword tokens
         return sum(encoded_words, [])
+
+    def reset(self) -> None:
+        """Reset all learned state."""
+        self.merges_list.clear()
+        self.vocab.clear()
+        self.corpus_as_symbols.clear()
 
 
 class TrieBPE(SubwordTokenizer):
@@ -315,3 +325,16 @@ class TrieBPE(SubwordTokenizer):
         prepared = self.preprocessing([text])[0]
         # Encode each word in turn and flatten
         return [tok for w, _ in prepared for tok in self.encode_word(w)]
+
+    def reset(self) -> None:
+        """Reset all learned state."""
+        # Clear BPE state
+        self.temp_corpus.clear()
+        self.pair_freq.clear()
+        self.pair_pos.clear()
+        self.heap.clear()
+        self.vocab.clear()
+        self.merges.clear()
+        self.logs.clear()
+        # Rebuild an empty trie
+        self.trie = Trie()
