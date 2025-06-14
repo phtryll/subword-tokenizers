@@ -156,6 +156,7 @@ class TrieBPE(SubwordTokenizer):
         self.merges: List[Tuple[str, str]] = []  # history of merges
         self.vocab: set[str] = set()
         self.trie = Trie()  # built in training
+        # for lazy/incremental loading
 
     def train(self, corpus: List[str], max_vocab: int = 30_000):
         """
