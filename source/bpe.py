@@ -1,5 +1,5 @@
 import heapq
-from utils import SubwordTokenizer, Trie
+from source.utils import SubwordTokenizer, Trie
 from collections import Counter, defaultdict
 from transformers import PreTrainedTokenizerFast
 from typing import List, Tuple, Dict

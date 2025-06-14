@@ -1,4 +1,4 @@
-from utils import SubwordTokenizer, WPTrie, WPTrie_E2E
+from source.utils import SubwordTokenizer, WPTrie, WPTrie_E2E
 from collections import Counter
 from typing import List, Tuple, Dict
 

@@ -1,7 +1,7 @@
-from utils import *
-from bpe import *
-from wordpiece import *
-from benchmarks import *
+from source.utils import *
+from source.bpe import *
+from source.wordpiece import *
+from source.benchmarks import *
 import random
 from datasets import load_dataset
 from transformers.models.auto.tokenization_auto import AutoTokenizer

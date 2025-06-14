@@ -1,8 +1,8 @@
 import argparse
 from transformers import AutoTokenizer
-from utils import *
-from bpe import *
-from wordpiece import *
+from source.utils import *
+from source.bpe import *
+from source.wordpiece import *
 
 # Available tokenizers
 TOKENIZERS = {

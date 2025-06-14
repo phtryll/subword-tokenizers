@@ -2,10 +2,10 @@ import argparse
 from argparse import RawTextHelpFormatter
 import os
 from transformers import AutoTokenizer
-from utils import *
-from bpe import *
-from wordpiece import *
-from benchmarks import *
+from source.utils import *
+from source.bpe import *
+from source.wordpiece import *
+from source.benchmarks import *
 import pickle
 
 if __name__ == "__main__":
