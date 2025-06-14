@@ -40,7 +40,7 @@ def main():
     # @MG Let's include options for end-to-end tokenization,
     # @MG either in an E2E implementation or in this program.
     for line in corpus:
-        tokens = tokenizer.tokenizer(line)
+        tokens = tokenizer.tokenize(line)
         print(f"{line} --> {' '.join(tokens)}")
 
     # @MG Let's include pre-trained versions.
