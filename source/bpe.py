@@ -195,8 +195,8 @@ class TrieBPE(SubwordTokenizer):
 
         # 5. Build or update heap of symbol pairs by frequency
         if not self.heap:
-            heap = [(-freq, pair) for pair, freq in self.pair_freq.items()]
-            heapq.heapify(heap)
+            self.heap = [(-freq, pair) for pair, freq in self.pair_freq.items()]
+            heapq.heapify(self.heap)
         else:
             for pair, freq in self.pair_freq.items():
                 heapq.heappush(self.heap, (-freq, pair))
@@ -228,7 +228,7 @@ class TrieBPE(SubwordTokenizer):
 
             # 6.3 Update affected words and pair frequencies
             for w_idx, p_idx in self.pair_pos[pair]:
-                word = temp_corpus[w_idx]
+                word = self.temp_corpus[w_idx]
                 # Skip if the word has changed already
                 if p_idx >= len(word) - 1 or (word[p_idx], word[p_idx + 1]) != pair:
                     continue
@@ -240,15 +240,15 @@ class TrieBPE(SubwordTokenizer):
                 # Decrement counts for old neighbor pairs
                 for old in (left_pair, pair, right_pair):
                     if old:
-                        pair_freq[old] -= 1
+                        self.pair_freq[old] -= 1
                 # Increment counts for newly-formed neighbor pairs
                 new_left = (word[p_idx - 1], word[p_idx]) if p_idx > 0 else None
                 new_right = (word[p_idx], word[p_idx + 1]) if p_idx + 1 < len(word) else None
                 for new in (new_left, new_right):
                     if new:
-                        pair_freq[new] += 1
-                        heapq.heappush(heap, (-pair_freq[new], new))
-                        pair_pos[new].append((w_idx, p_idx - 1 if new is new_left else p_idx))
+                        self.pair_freq[new] += 1
+                        heapq.heappush(self.heap, (-self.pair_freq[new], new))
+                        self.pair_pos[new].append((w_idx, p_idx - 1 if new == new_left else p_idx))
             # Mark this pair as consumed
             self.pair_freq[pair] = 0
             self.pair_pos.pop(pair, None)
