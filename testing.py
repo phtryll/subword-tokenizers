@@ -1,17 +1,7 @@
-from custom_tokenizers import (
-    SubwordTokenizer,
-    NaiveBPE,
-    TrieNode,
-    Trie,
-    TrieBPE,
-    NaiveWP,
-    WPTrieNode,
-    WPTrie,
-    WPTrie_E2E,
-    FastWP,
-    Fast_WP_E2E
-)
-from custom_benchmarks import *
+from utils import *
+from bpe import *
+from wordpiece import *
+from benchmarks import *
 import random
 from datasets import load_dataset
 from transformers.models.auto.tokenization_auto import AutoTokenizer

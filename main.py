@@ -2,20 +2,10 @@ import argparse
 from argparse import RawTextHelpFormatter
 import os
 from transformers import AutoTokenizer
-from custom_tokenizers import (
-    SubwordTokenizer,
-    NaiveBPE,
-    TrieNode,
-    Trie,
-    TrieBPE,
-    NaiveWP,
-    WPTrieNode,
-    WPTrie,
-    WPTrie_E2E,
-    FastWP,
-    Fast_WP_E2E
-)
-from custom_benchmarks import *
+from utils import *
+from bpe import *
+from wordpiece import *
+from benchmarks import *
 import pickle
 
 if __name__ == "__main__":
