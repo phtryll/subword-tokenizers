@@ -195,7 +195,7 @@ class TrieBPE(SubwordTokenizer):
 
         # 5. Build or update heap of symbol pairs by frequency
         if not self.heap:
-            heap = [(-freq, pair) for pair, freq in pair_freq.items()]
+            heap = [(-freq, pair) for pair, freq in self.pair_freq.items()]
             heapq.heapify(heap)
         else:
             for pair, freq in self.pair_freq.items():
