@@ -198,7 +198,7 @@ class TrieBPE(SubwordTokenizer):
             heap = [(-freq, pair) for pair, freq in pair_freq.items()]
             heapq.heapify(heap)
         else:
-            for pair, freq in self.pair_freq.items()
+            for pair, freq in self.pair_freq.items():
                 heapq.heappush(self.heap, (-freq, pair))
 
         if self.verbose:
