@@ -12,15 +12,19 @@ class NaiveWP(SubwordTokenizer):
 
     def __init__(self, tokenizer):
         '''
-        Initialize the Naive_WP tokenizer.
-            corpus (List[str]): A list of strings used to train the tokenizer.
-            tokenizer (AutoTokenizer): A tokenizer instance to assist with preprocessing.
+        Initialize the tokenizer.
+            tokenizer (AutoTokenizer): helper tokenizer for preprocessing.
         '''
 
         # Initialize the parent class
         super().__init__(tokenizer)
+        # For lazy/incremental training
+        self.vocab: set[str] = set()
+        self.merges_list: List[Tuple[str,str]] = []
+        # Hold (symbol_sequence, frequency) across calls
+        self.corpus_as_symbols: List[Tuple[List[str], int]] = []
 
-    def train(self, corpus, max_vocab_size=30_000):
+    def train(self, corpus, max_vocab_size: int = 30_000):
         """
         Train the WordPiece tokenizer on the input corpus.
 
@@ -30,88 +34,60 @@ class NaiveWP(SubwordTokenizer):
         """
 
         if not isinstance(corpus, list) or not all(isinstance(example, str) for example in corpus):
-            raise TypeError("Corpus must be a list of strings.")
+            raise TypeError("corpus must be a list of strings.")
 
         if not isinstance(max_vocab_size, int):
-            raise TypeError("Maximum vocabulary size must be an integer.")
+            raise TypeError("max_vocab_size must be an int.")
 
         # Preprocess the corpus using parent method
         prepd_corpus = super().preprocessing(corpus)
 
-        # Flatten the preprocessed corpus into a list of words
-        corpus_as_words = [word for example in prepd_corpus for word, position in example]
-        # Count frequency of each word
-        word_freqs = Counter(corpus_as_words)
-        # Represent each word as a list of symbols
-        corpus_as_symbols = [
-            ([symbol for symbol in word], freq)
-            for word, freq in word_freqs.items()
-        ]
+        # Accumulate data into state
+        words = [w for example in prepd_corpus for w, _ in example]
+        freqs = Counter(words)
+        for w, freq in freqs.items():
+            # create symbol list with '##' prefixes
+            seq = [w[0]] + [f'##{c}' for c in w[1:]]
+            self.corpus_as_symbols.append((seq, freq))
+            # update vocab
+            self.vocab.update(seq)
 
-        # Prefix all but the first with '##'
-        for word in corpus_as_symbols:
-            word[0][1:] = ['##' + symbol for symbol in word[0][1:]]
-
-        # Initialize the vocabulary with all symbols
-        self.vocab = {symbol for word, freq in corpus_as_symbols for symbol in word}
-
-        # Main loop — continue until vocabulary size limit is reached
+        # Merge loop: expand vocabulary until limit
         while len(self.vocab) < max_vocab_size:
+            # count symbol and adjacent-pair frequencies
+            pair_freqs: Counter[Tuple[str,str]] = Counter()
+            symbol_freqs: Counter[str] = Counter()
+            for seq, freq in self.corpus_as_symbols:
+                for sym in seq:
+                    symbol_freqs[sym] += freq
+                for i in range(len(seq)-1):
+                    pair = (seq[i], seq[i+1])
+                    pair_freqs[pair] += freq
 
-            # Get frequencies of adjacent symbol pairs
-            pair_freqs = Counter(
-                (word[0][i], word[0][i + 1])
-                for word in corpus_as_symbols
-                for i in range(len(word[0]) - 1)
-                for _ in range(word[1])
-            )
-
-            # Frequency of individual symbols
-            get_freqs = Counter(
-                symbol
-                for word, freq in corpus_as_symbols
-                for symbol in word
-                for _ in range(freq)
-            )
-
-            ## PROPOSITION:
-            '''
-            # Frequencies of individual symbols across all items
-            # In this version, we avoid creating freq number of duplicates per symbol
-            get_freqs = Counter()
-            for word, freq in corpus_as_symbols:
-                for symbol in word:
-                    get_freqs[symbol] += freq
-            '''
-
-            # Calculate scores for each pair
+            # score = freq(ab) / freq(a)*freq(b), guard zero division
             scores = {
-                pair: freq / (get_freqs[pair[0]] * get_freqs[pair[1]])
+                pair: freq / max(symbol_freqs[pair[0]] * symbol_freqs[pair[1]], 1)
                 for pair, freq in pair_freqs.items()
             }
 
-            ## PROPOSITION:
-            '''
+            # Break if no merges left
             if not scores:
                 break
-            '''
-
             # Choose the pair with the highest score
-            high_score = max(scores, key=scores.get) # type: ignore
+            high_score = max(scores, key=scores.get)
 
-            # Add merged token to the vocabulary
-            self.vocab.add(high_score[0] + high_score[1][2:])
+            # Record merge, update vocabulary
+            merged = high_score[0] + high_score[1][2:]
+            # Stop if no new token
+            if merged in self.vocab:
+                break
+            self.merges_list.append(high_score)
+            self.vocab.add(merged)
 
-            ## PROPOSITION:
-            '''
-            if merged_token not in self.vocab:
-                self.vocab.add(merged_token)
-            '''
-
-            # Replace the pair in all corpus words
-            corpus_as_symbols = [
-                (self._replace_pair(high_score, word), freq)
-                for word, freq in corpus_as_symbols
+            # Apply merge across all accumulated symbols
+            self.corpus_as_symbols = [
+                (self._replace_pair(high_score, seq), freq)
+                for seq, freq in self.corpus_as_symbols
             ]
 
     def _replace_pair(self, pair, word):
@@ -150,27 +126,17 @@ class NaiveWP(SubwordTokenizer):
         Returns:
             List[str]: A list of subword tokens, or ["[UNK]"] if not tokenizable.
         """
-
-        tokens = []
-
-        while len(word) > 0:
-            i = len(word)
-
-            # Try longest possible substring in vocabulary
-            while i > 0 and word[:i] not in self.vocab:
-                i -= 1
-
-            if i == 0:
-                return ["[UNK]"]
-
-            tokens.append(word[:i])
-            word = word[i:]
-
-            # Prepend '##' to mark continuation if needed
-            if len(word) > 0:
-                word = f"##{word}"
-
-        return tokens
+        if not word:
+            return ["[UNK]"]
+        # Start with char-level segmentation from training
+        seq: List[str] = [word[0]] + [f'##{c}' for c in word[1:]]
+        # Apply learned merges greedily
+        for pair in self.merges_list:
+            seq = self._replace_pair(pair, seq)
+        # If nothing matches vocabulary, fallback to [UNK]
+        if any(tok not in self.vocab for tok in seq):
+            return ["[UNK]"]
+        return seq
 
     def tokenize(self, text):
         """
@@ -191,10 +157,14 @@ class NaiveWP(SubwordTokenizer):
         pre_tokenized_text = [word for word, offset in pre_tokenized_corpus[0]]
 
         # Encode each word and flatten the result
-        encoded_words = [self.encode_word(word) for word in pre_tokenized_text]
+        encoded_words: List[List[str]] = [self.encode_word(word) for word in pre_tokenized_text]
+        return [tok for sub in encoded_words for tok in sub]
 
-        return sum(encoded_words, [])
-
+    def reset(self) -> None:
+        """Reset all learned state."""
+        self.vocab.clear()
+        self.merges_list.clear()
+        self.corpus_as_symbols.clear()
 
 class FastWP(NaiveWP):
     """
@@ -206,9 +176,8 @@ class FastWP(NaiveWP):
 
     def __init__(self, tokenizer):
         '''
-        Initialize the Fast_WP tokenizer.
-            corpus (List[str]): A list of strings used to train the tokenizer.
-            tokenizer (AutoTokenizer): A tokenizer instance to assist with preprocessing.
+        Initialize the tokenizer.
+            tokenizer (AutoTokenizer): helper tokenizer for preprocessing.
         '''
         # Initialize the parent class
         super().__init__(tokenizer)
@@ -224,7 +193,7 @@ class FastWP(NaiveWP):
         super().train(corpus, max_vocab_size)
         self.vocab_trie = WPTrie(self.vocab)
 
-    def encode_word(self, word):
+    def encode_word(self, word: str) -> List[str]:
         """
         Encode a single word using the WordPiece trie.
 
@@ -234,15 +203,18 @@ class FastWP(NaiveWP):
         Returns:
             List[str]: A list of subword tokens, or ["[UNK]"] if not matched.
         """
-        tokens, u, i = self.matchloop(word + ' ', 0)
-        if i < len(word) or u not in {self.vocab_trie.root, self.vocab_trie.root_sharp}:
-            tokens = ["[UNK]"]
-        else:
-            if u == self.vocab_trie.root_sharp and len(tokens) == 0:
-                tokens = super().encode_word(word)  # Should call original WordPiece
+        if not word:
+            return ["[UNK]"]
+        tokens, node, i = self.matchloop(word + " ", 0)
+        # failed if idx didn't consume full word or final node not valid state
+        if i < len(word) or node not in {self.vocab_trie.root, self.vocab_trie.root_sharp}:
+            return ["[UNK]"]
+        # fall back to NaiveWP if only a sharp-root end w/o tokens
+        if node is self.vocab_trie.root_sharp and not tokens:
+            return super().encode_word(word)
         return tokens
 
-    def matchloop(self, s, i):
+    def matchloop(self, s: str, i: int):
         """
         Traverse the WordPiece trie to find all matching subword tokens.
 
@@ -253,24 +225,25 @@ class FastWP(NaiveWP):
         Returns:
             Tuple[List[str], WPTrieNode, int]: Tokens found, final node, and end index.
         """
-        u = self.vocab_trie.root
-        tokens = []
+        node = self.vocab_trie.root
+        tokens: List[str] = []
         while i < len(s):
-            while s[i] not in u.children:
-                if u.failure_link is None:
-                    return tokens, u, i
-                tokens.extend(u.failure_pops)
-                u = u.failure_link
-            u = u.children[s[i]]
+            # no outgoing edge, follow failure links
+            while s[i] not in node.children:
+                if node.failure_link is None:
+                    return tokens, node, i
+                tokens.extend(node.failure_pops)
+                node = node.failure_link
+            node = node.children[s[i]]
             i = i + 1
-        return tokens, u, i
+        return tokens, node, i
 
 
 class Fast_WP_E2E(FastWP):
     """
     A fast, boundary-aware WordPiece tokenizer with end-to-end punctuation handling.
 
-    Uses WPTrie_E2E to tokenize input while respecting word boundaries and punctuation,
+    Uses FastWP to tokenize input while respecting word boundaries and punctuation,
     enabling more robust token segmentation for natural text.
     """
 
