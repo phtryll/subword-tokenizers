@@ -1,5 +1,5 @@
 import heapq
-from source.utils import SubwordTokenizer, Trie, WPTrie
+from source.utils import SubwordTokenizer, Trie
 from collections import Counter, defaultdict
 from transformers import PreTrainedTokenizerFast
 from typing import List, Tuple, Dict
@@ -171,9 +171,7 @@ class FastBPE(NaiveBPE):
         """
         super().train(corpus, max_vocab_size)
         # Build Trie over vocabulary
-        self.trie = WPTrie(self.vocab) #EDIT
-        #for token in self.vocab:
-        #    self.trie.insert(list(token), token)
+        self.trie = Trie(self.vocab)
 
     def _encode_seq(self, seq: List[str]) -> List[str]:
         """
