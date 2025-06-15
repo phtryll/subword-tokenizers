@@ -1,18 +1,17 @@
 import heapq
-from source.utils import SubwordTokenizer, Trie
+from source.utils import SubwordTokenizer, AhoCorasick#Trie
 from collections import Counter, defaultdict
-from transformers import PreTrainedTokenizerFast
 from typing import List, Tuple, Dict
 
 class NaiveBPE(SubwordTokenizer):
     """A subword tokenizer based on the Byte-Pair Encoding (BPE) algorithm."""
 
-    def __init__(self, tokenizer: PreTrainedTokenizerFast) -> None:
+    def __init__(self, tokenizer) -> None:
         """
         Initialize the Naive_BPE tokenizer.
 
         Args:
-            tokenizer (PreTrainedTokenizerFast): A tokenizer instance for preprocessing.
+            tokenizer (AutoTokenizer): A tokenizer instance for preprocessing.
         """
         super().__init__(tokenizer)
         # for lazy/incremental training
@@ -153,13 +152,58 @@ class NaiveBPE(SubwordTokenizer):
 
 class FastBPE(NaiveBPE):
     """
-    A subword tokenizer using Byte-Pair Encoding (BPE) with Trie-based lookup.
-    Learns merges from a training corpus and uses a Trie for greedy longest-prefix
-    matching during tokenization.
+    Fast BPE: exact same merges and segmentation as NaiveBPE,
+    but with O(n * L) encoding where L = max token length.
     """
     def __init__(self, tokenizer: PreTrainedTokenizerFast) -> None:
         super().__init__(tokenizer)
-        self.trie = Trie()  # built in training
+        self.max_token_length: int = 0
+
+    def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
+        super().train(corpus, max_vocab)
+        # record maximum subword length
+        self.max_token_length = max(len(tok) for tok in self.vocab)
+
+    def _encode_seq(self, input_sequence: List[str]) -> List[str]:
+        out: List[str] = []
+        i, n, L = 0, len(input_sequence), self.max_token_length
+        vocab = self.vocab
+        while i < n:
+            max_len = min(L, n - i)
+            for length in range(max_len, 0, -1):
+                cand = "".join(input_sequence[i : i + length])
+                if cand in vocab:
+                    out.append(cand)
+                    i += length
+                    break
+            else:
+                # fallback—shouldn’t happen once single chars are in vocab
+                out.append(input_sequence[i])
+                i += 1
+        return out
+
+    def encode_word(self, word: str) -> List[str]:
+        return self._encode_seq(list(word))
+
+    def tokenize(self, text: str) -> List[str]:
+        if not isinstance(text, str):
+            raise TypeError("Text must be a string")
+        prepped = super().preprocessing([text])[0]
+        return [tok
+                for w, _ in prepped
+                for tok in self.encode_word(w)]
+
+    def reset(self) -> None:
+        super().reset()
+        self.max_token_length = 0
+
+class ACBPE(NaiveBPE):
+    """
+    A subword tokenizer using Byte-Pair Encoding (BPE) with Aho-Corasick automaton.
+    """
+    def __init__(self, tokenizer) -> None:
+        super().__init__(tokenizer)
+        self.automaton = AhoCorasick()  # built in training
 
     def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
         """
@@ -170,33 +214,41 @@ class FastBPE(NaiveBPE):
             max_vocab (int): The maximum size of the subword vocabulary.
         """
         super().train(corpus, max_vocab)
-        # Build Trie over vocabulary
-        self.trie = Trie()
-        for token in self.vocab:
-            self.trie.insert(list(token), token)
+        # Build a set of valid adjacent token pairs (enforce compatibility)
+        self.compatible_pairs: Set[Tuple[str, str]] = set()
+        for seq, freq in self.corpus_as_symbols:
+            for i in range(len(seq) - 1):
+                self.compatible_pairs.add((seq[i], seq[i+1]))
+        # Build automaton over vocabulary
+        self.automaton = AhoCorasick(self.vocab)
 
-    def _encode_seq(self, seq: List[str]) -> List[str]:
-        """
-        Encode a list of symbols using greedy longest-prefix matching.
+    def _encode_seq(self, input_sequence: List[str]) -> List[str]:
+        """Greedy longest-prefix matching using Aho-Corasick automaton."""
+        # Map start_index: (length, token)
+        longest_match_at_start: Dict[int, Tuple[int, str]] = {}
+        for end_index, token in self.automaton.find_matches(input_sequence):
+            start_index = end_index - len(token) + 1
+            if start_index not in longest_match_at_start or len(token) > longest_match_at_start[start_index][0]:
+                longest_match_at_start[start_index] = (len(token), token)
 
-        Args:
-            seq (List[str]): A list of character symbols to encode.
-
-        Returns:
-            List[str]: The sequence of matched subword tokens.
-        """
-        out, i = [], 0
-        while i < len(seq):
-            tok, length = self.trie.longest_match(seq, i)
-            if tok is None:
-                # no multi-char token matches here: emit single char
-                out.append(seq[i])
-                i += 1
-            else:
-                # emit the matched token, advance by its length
-                out.append(tok)
+        output_tokens, i = [], 0
+        while i < len(input_sequence):
+            if i in longest_match_at_start:
+                length, token = longest_match_at_start[i]
+                # enforce compatibility with previous token
+                if output_tokens:
+                    prev = output_tokens[-1]
+                    if (prev, token) not in self.compatible_pairs:
+                        # illegal transition, fallback to singleton
+                        output_tokens.append(input_sequence[i])
+                        i += 1
+                        continue
+                output_tokens.append(token)
                 i += length
-        return out
+            else:
+                output_tokens.append(input_sequence[i])
+                i += 1
+        return output_tokens
 
     def encode_word(self, word: str) -> List[str]:
         """
@@ -236,4 +288,4 @@ class FastBPE(NaiveBPE):
         # Clear BPE state
         super().reset()
         # Rebuild an empty trie
-        self.trie = Trie()
+        self.automaton = AhoCorasick()

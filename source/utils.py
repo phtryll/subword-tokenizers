@@ -1,5 +1,5 @@
 from transformers import PreTrainedTokenizerFast
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import List, Tuple, Optional
 
 class SubwordTokenizer:
@@ -252,3 +252,51 @@ class WPTrie_E2E(WPTrie):
                 if not v.char.isalnum():
                     v.failure_link = self.root_p
                 v_queue.append(v)
+
+class ACNode(dict):
+    __slots__ = ("failure_link", "output_token")
+    def __init__(self):
+        super().__init__()
+        self.failure_link: "ACNode" | None = None
+        self.output_token: Optional[str]   = None
+
+class AhoCorasick:
+    def __init__(self, token_vocab: List[str] = ()):
+        self.root = ACNode()
+        for token in token_vocab:
+            self.insert(token)
+        self.build_failure_links()
+
+    def insert(self, token: str) -> None:
+        state = self.root
+        for symbol in token:
+            state = state.setdefault(symbol, ACNode())
+        state.output_token = token
+
+    def build_failure_links(self) -> None:
+        queue = deque()
+        for state in self.root.values():
+            state.failure_link = self.root
+            queue.append(state)
+        while queue:
+            current_state = queue.popleft()
+            for symbol, next_state in current_state.items():
+                queue.append(next_state)
+                fallback = current_state.failure_link
+                while fallback and symbol not in fallback:
+                    fallback  = fallback.failure_link
+                next_state.failure_link = fallback[symbol] if fallback and symbol in fallback else self.root
+                if next_state.failure_link.output_token and not next_state.output_token:
+                    next_state.output_token = next_state.failure_link.output_token
+
+    def find_matches(self, input_sequence: List[str]):
+        state = self.root
+        for end_index, symbol in enumerate(input_sequence):
+            while state and symbol not in state:
+                state = state.failure_link
+            state = state[symbol] if state else self.root
+            match_state = state
+            while match_state:
+                if match_state.output_token:
+                    yield end_index, match_state.output_token
+                match_state = match_state.failure_link if match_state is not self.root else None
