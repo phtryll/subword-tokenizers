@@ -206,6 +206,36 @@ class WPTrie(object):
                 # Add this child node to the queue for further processing
                 v_queue.append(v)
 
+    def longest_match(self, seq: List[str], start: int = 0) -> Tuple[Optional[str], int]:
+        """
+        Find the longest matching token starting from a given index.
+
+        Args:
+            seq (List[str]): The input sequence of symbols.
+            start (int): The index to start matching from.
+
+        Returns:
+            Tuple[Optional[str], int]: A tuple containing the matched token (if any)
+            and the length of the matched segment in symbols.
+        """
+        node = self.root
+        matched: Optional[str] = None
+        length = 0
+
+        # Go down the trie as far as possible
+        for i in range(start, len(seq)):
+            sym = seq[i]
+            if sym not in node.children:
+                # No further path, stop
+                break
+            node = node.children[sym]
+            if node.Vx is not None:
+                # Found valid token, record it
+                matched = node.Vx
+                length = i - start + 1
+
+        return matched, length
+
 
 class WPTrie_E2E(WPTrie):
     """
