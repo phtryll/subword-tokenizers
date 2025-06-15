@@ -161,7 +161,7 @@ class FastBPE(NaiveBPE):
         super().__init__(tokenizer)
         self.trie = Trie()  # built in training
 
-    def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
+    def train(self, corpus: List[str], max_vocab_size: int = 30_000) -> None:
         """
         Train the BPE tokenizer on the input corpus.
 
@@ -169,7 +169,7 @@ class FastBPE(NaiveBPE):
             corpus (List[str]): A list of strings to learn subword merges from.
             max_vocab (int): The maximum size of the subword vocabulary.
         """
-        super().train(corpus, max_vocab)
+        super().train(corpus, max_vocab_size)
         # Build Trie over vocabulary
         self.trie = Trie()
         for token in self.vocab:
