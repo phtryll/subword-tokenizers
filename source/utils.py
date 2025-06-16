@@ -61,15 +61,28 @@ class TrieNode:
         # Vx is the string spelled out by the path to this node
         self.Vx = char
         
-class Trie(object):
+
+class WPTrie_E2E(object):
+    """
+    Trie structure for efficient for end-to-end WordPiece tokenization
+
+    Handles precomputation step for LinMaxMatch fast WordPiece tokenization algorithm.
+
+    Includes special handling for punctuation and boundary-aware failure links.
+    """
 
     def __init__(self, vocab={}):
         # Initialize the root node (empty string)
         self.root = TrieNode("")
+        # Special root node for punctuation transitions
+        self.root_p = TrieNode("")
+        # Insert the special "##" prefix and store its node
+        self.root_sharp = self.insert("##")
         # Insert all tokens from the vocabulary into the trie
         for v in vocab:
             self.insert(v)
-    
+        self.precompute()
+
     def insert(self, word):
         """
         Insert a word into the trie, creating nodes as needed.
@@ -89,101 +102,6 @@ class Trie(object):
         # Mark this node as the end of a valid token
         node.is_end = True
         return node
-    
-    def longest_match(self, seq: List[str], start: int = 0) -> Tuple[Optional[str], int]:
-        """
-        Find the longest matching token starting from a given index.
-
-        Args:
-            seq (List[str]): The input sequence of symbols.
-            start (int): The index to start matching from.
-
-        Returns:
-            Tuple[Optional[str], int]: A tuple containing the matched token (if any)
-            and the length of the matched segment in symbols.
-        """
-        node = self.root
-        matched: Optional[str] = None
-        length = 0
-
-        # Go down the trie as far as possible
-        for i in range(start, len(seq)):
-            sym = seq[i]
-            if sym not in node.children:
-                # No further path, stop
-                break
-            node = node.children[sym]
-            if node.Vx is not None:
-                # Found valid token, record it
-                matched = node.Vx
-                length = i - start + 1
-
-        return matched, length
-    
-
-class WPTrie(Trie):
-    """
-    Trie structure for efficient WordPiece tokenization.
-
-    Builds failure links and supports token matching using a variant of the
-    Aho-Corasick algorithm for fast lookup.
-    """
-
-    def __init__(self, vocab={}):
-        # Call Trie constructor
-        super().__init__(vocab)
-        # Insert the special "##" prefix and store its node
-        self.root_sharp = self.insert("##")
-        # Precompute failure links for efficient matching
-        self.precompute()
-
-
-    def precompute(self):
-        """
-        Compute failure links and failure pops for all nodes in the trie.
-        This enables efficient Aho-Corasick-style matching.
-        """
-        r = self.root
-        r_sharp = self.root_sharp
-        # Use a queue to traverse all trie nodes in BFS order
-        v_queue = [r, r_sharp]
-        while len(v_queue) > 0:
-            u = v_queue.pop(0)
-            for c, v in u.children.items():
-                if v == r_sharp:
-                    # Skip the root_sharp node itself
-                    continue
-                if v.is_end:
-                    # If this node ends a token, set failure link to r_sharp and pop its token
-                    v.failure_link = r_sharp
-                    v.failure_pops = [v.Vx]
-                else:
-                    # Otherwise, walk up failure links to find node with c as child
-                    z = u.failure_link
-                    Z = []
-                    while z is not None and c not in z.children:
-                        # Collect failure pops along the way
-                        Z.extend(z.failure_pops)
-                        z = z.failure_link
-                    if z is not None:
-                        # Set failure link to matching child, accumulate pops
-                        v.failure_link = z.children[c]
-                        v.failure_pops = u.failure_pops + Z
-                # Add this child node to the queue for further processing
-                v_queue.append(v)
-
-
-class WPTrie_E2E(WPTrie):
-    """
-    Extended WPTrie for end-to-end WordPiece tokenization.
-
-    Adds special handling for punctuation and boundary-aware failure links.
-    """
-
-    def __init__(self, vocab={}):
-        # Special root node for punctuation transitions
-        self.root_p = TrieNode("")
-        super().__init__(vocab)
 
     # Modified for E2E tokenization
     def precompute(self):
