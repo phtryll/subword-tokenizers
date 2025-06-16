@@ -312,13 +312,13 @@ def tokenization_performance(tokenizer: Any, input: List[str]) -> Dict[str, floa
     }
 
 
-def training_performance(tokenizer: Any, corpus: List[str], max_vocab_size: int) -> Dict[str, float]:
+def training_performance(tokenizer: Any, test_corpus: List[str], max_vocab_size: int) -> Dict[str, float]:
     """
     Measure training speed and memory usage for a tokenizer.
 
     Args:
         tokenizer (Any): Tokenizer instance with a `train` method.
-        corpus (List[str]): List of training sentences.
+        test_corpus (List[str]): List of training sentences.
         max_vocab_size (int): Maximum vocabulary size for training.
 
     Returns:
@@ -330,7 +330,7 @@ def training_performance(tokenizer: Any, corpus: List[str], max_vocab_size: int)
     
     # 2. Measure training time
     start_time = time.perf_counter()
-    tokenizer.train(corpus, max_vocab_size)
+    tokenizer.train(test_corpus, max_vocab_size)
     end_time = time.perf_counter()
     
     # 3. Get peak memory usage
@@ -394,116 +394,124 @@ def zipf_distribution(tokenizer: Any, input: List[str]) -> Dict[str, float]:
 
 def benchmarks(
     tokenizer: Any,
-    corpus: List[str],
+    test_corpus: List[str],
     max_vocab_size: int,
-    reference_tokenizer: Any = None
+    train_corpus: List[str] = [],
+    reference_tokenizers: List[Any] = []
 ) -> None:
     """
     Run all benchmark functions and print results to the console.
 
     Args:
         tokenizer (Any): Tokenizer with a `tokenize` and `train` method.
-        corpus (List[str]): List of input sentences.
+        test_corpus (List[str]): List of input sentences.
         max_vocab_size (int): Maximum vocabulary size for training.
-        reference_tokenizer (Any, optional): Second tokenizer for equivalence metrics.
+        train_corpus (List[str]): List of training sentences.
+        reference_tokenizers (List[Any], optional): List of additional tokenizers for equivalence and comparison metrics.
     """
 
     # Get the names of the tokenizers
     name1 = tokenizer.__class__.__name__
 
+    # Train on the given data
+    tokenizer.train(train_corpus, max_vocab_size)
+
     # Run metrics
     print(f"=== Tokenization Benchmarks for {name1} ===")
     
-    avg_tokens = avg_tokens_per_sentence(tokenizer, corpus)
+    avg_tokens = avg_tokens_per_sentence(tokenizer, test_corpus)
     print(f"Average tokens per sentence:        {avg_tokens:.2f}")
     
-    avg_tpw = avg_tokens_per_word(tokenizer, corpus)
+    avg_tpw = avg_tokens_per_word(tokenizer, test_corpus)
     print(f"Average tokens per word:            {avg_tpw:.2f}")
 
-    comp_rate = compression_rate(tokenizer, corpus)
+    comp_rate = compression_rate(tokenizer, test_corpus)
     print(f"Compression rate (chars per token): {comp_rate:.2f}")
     
-    ns_len = normalized_sequence_length(tokenizer, corpus)
+    ns_len = normalized_sequence_length(tokenizer, test_corpus)
     print(f"Normalized sequence length:         {ns_len:.4f}")
 
-    frag_rate = subword_fragmentation_rate(tokenizer, corpus)
+    frag_rate = subword_fragmentation_rate(tokenizer, test_corpus)
     print(f"Subword fragmentation rate:         {frag_rate:.2f}%")
 
-    vocab_cov = vocabulary_coverage_rate(tokenizer, corpus)
+    vocab_cov = vocabulary_coverage_rate(tokenizer, test_corpus)
     print(f"Vocabulary coverage rate:           {vocab_cov:.2f}%")
 
-    # If a second tokenizer was provided, run the same metrics for it
-    if reference_tokenizer is not None:
-        name2 = reference_tokenizer.__class__.__name__
-        print(f"\n=== Tokenization Benchmarks for {name2} ===")
-        avg_tokens2 = avg_tokens_per_sentence(reference_tokenizer, corpus)
-        print(f"Average tokens per sentence:        {avg_tokens2:.2f}")
-        avg_tpw2 = avg_tokens_per_word(reference_tokenizer, corpus)
-        print(f"Average tokens per word:            {avg_tpw2:.2f}")
-        comp_rate2 = compression_rate(reference_tokenizer, corpus)
-        print(f"Compression rate (chars per token): {comp_rate2:.2f}")
-        ns_len2 = normalized_sequence_length(reference_tokenizer, corpus)
-        print(f"Normalized sequence length:         {ns_len2:.4f}")
-        frag_rate2 = subword_fragmentation_rate(reference_tokenizer, corpus)
-        print(f"Subword fragmentation rate:         {frag_rate2:.2f}%")
-        vocab_cov2 = vocabulary_coverage_rate(reference_tokenizer, corpus)
-        print(f"Vocabulary coverage rate:           {vocab_cov2:.2f}%")
-
-    # Optional equivalence metrics if a reference tokenizer is provided
-    if reference_tokenizer is not None:
-        name2 = reference_tokenizer.__class__.__name__
-        print(f"\n=== Token Sequence Equivalence ({name1} vs. {name2}) ===")
-        (
-            total_pos_matches,
-            total_positions,
-            positional_rate,
-            total_unordered_matches,
-            unordered_rate,
-            total_word_matches,
-            total_words,
-            word_match_rate
-        ) = token_sequence_equivalence(tokenizer, reference_tokenizer, corpus)
-        print(f"Positional match rate: {positional_rate:.2f}% ({total_pos_matches}/{total_positions})")
-        print(f"Unordered match rate:  {unordered_rate:.2f}% ({total_unordered_matches}/{total_positions})")
-        print(f"Word match rate:       {word_match_rate:.2f}% ({total_word_matches}/{total_words})")
-
     print("\n=== Tokenization Performance ===")
-    perf = tokenization_performance(tokenizer, corpus)
+    perf = tokenization_performance(tokenizer, test_corpus)
     print(f"Total time:     {perf['total_time_s']:.4f}s")
     print(f"Throughput:     {perf['throughput_tokens_per_s']:.2f} tokens/s")
     print(f"Avg. latency:   {perf['avg_latency_s']:.6f}s per sentence")
     print(f"Peak memory:    {perf['peak_memory_mb']:.2f} MB")
 
     print("\n=== Training Performance ===")
-    train_perf = training_performance(tokenizer, corpus, max_vocab_size)
+    train_perf = training_performance(tokenizer, train_corpus, max_vocab_size)
     print(f"Training time:  {train_perf['train_time_s']:.4f}s")
     print(f"Peak memory:    {train_perf['peak_memory_mb']:.2f} MB")
     print(f"Num. merges:    {int(train_perf['num_merges'])}")
 
     print("\n=== Zipf Distribution Fit ===")
-    zipf_res = zipf_distribution(tokenizer, corpus)
+    zipf_res = zipf_distribution(tokenizer, train_corpus)
     print(f"Slope:          {zipf_res['slope']:.4f}")
     print(f"Intercept:      {zipf_res['intercept']:.4f}")
     print(f"Correlation:    {zipf_res['correlation']:.4f}")
 
-    # If a second tokenizer was provided...
-    if reference_tokenizer is not None:
-        name2 = reference_tokenizer.__class__.__name__
-        print(f"\n=== Tokenization Performance for {name2} ===")
-        perf2 = tokenization_performance(reference_tokenizer, corpus)
-        print(f"Total time:     {perf2['total_time_s']:.4f}s")
-        print(f"Throughput:     {perf2['throughput_tokens_per_s']:.2f} tokens/s")
-        print(f"Avg. latency:   {perf2['avg_latency_s']:.6f}s per sentence")
-        print(f"Peak memory:    {perf2['peak_memory_mb']:.2f} MB")
-
-        print(f"\n=== Training Performance for {name2} ===")
-        train_perf2 = training_performance(reference_tokenizer, corpus, max_vocab_size)
-        print(f"Training time:  {train_perf2['train_time_s']:.4f}s")
-        print(f"Peak memory:    {train_perf2['peak_memory_mb']:.2f} MB")
-        print(f"Num. merges:    {int(train_perf2['num_merges'])}")
-
-        print(f"\n=== Zipf Distribution Fit for {name2} ===")
-        zipf_res2 = zipf_distribution(reference_tokenizer, corpus)
-        print(f"Slope:          {zipf_res2['slope']:.4f}")
-        print(f"Intercept:      {zipf_res2['intercept']:.4f}")
-        print(f"Correlation:    {zipf_res2['correlation']:.4f}")
+    # If additional tokenizers were provided, run the same metrics for each
+    if reference_tokenizers:
+        for optional_tokenizer in reference_tokenizers:
+            other_name = optional_tokenizer.__class__.__name__
+            optional_tokenizer.train(train_corpus, max_vocab_size)
+            
+            print(f"\n=== Tokenization Benchmarks for {other_name} ===")
+            avg_tokens_ref = avg_tokens_per_sentence(optional_tokenizer, test_corpus)
+            print(f"Average tokens per sentence:        {avg_tokens_ref:.2f}")
+            avg_tpw_ref = avg_tokens_per_word(optional_tokenizer, test_corpus)
+            print(f"Average tokens per word:            {avg_tpw_ref:.2f}")
+            
+            comp_rate_ref = compression_rate(optional_tokenizer, test_corpus)
+            print(f"Compression rate (chars per token): {comp_rate_ref:.2f}")
+            
+            ns_len_ref = normalized_sequence_length(optional_tokenizer, test_corpus)
+            print(f"Normalized sequence length:         {ns_len_ref:.4f}")
+            
+            frag_rate_ref = subword_fragmentation_rate(optional_tokenizer, test_corpus)
+            print(f"Subword fragmentation rate:         {frag_rate_ref:.2f}%")
+            
+            vocab_cov_ref = vocabulary_coverage_rate(optional_tokenizer, test_corpus)
+            print(f"Vocabulary coverage rate:           {vocab_cov_ref:.2f}%")
+            
+            # Equivalence metrics
+            print(f"\n=== Token Sequence Equivalence ({name1} vs. {other_name}) ===")
+            (
+                total_pos_matches,
+                total_positions,
+                positional_rate,
+                total_unordered_matches,
+                unordered_rate,
+                total_word_matches,
+                total_words,
+                word_match_rate
+            ) = token_sequence_equivalence(tokenizer, optional_tokenizer, test_corpus)
+            print(f"Positional match rate: {positional_rate:.2f}% ({total_pos_matches}/{total_positions})")
+            print(f"Unordered match rate:  {unordered_rate:.2f}% ({total_unordered_matches}/{total_positions})")
+            print(f"Word match rate:       {word_match_rate:.2f}% ({total_word_matches}/{total_words})")
+            
+            # Performance metrics for reference
+            print(f"\n=== Tokenization Performance for {other_name} ===")
+            perf_ref = tokenization_performance(optional_tokenizer, test_corpus)
+            print(f"Total time:     {perf_ref['total_time_s']:.4f}s")
+            print(f"Throughput:     {perf_ref['throughput_tokens_per_s']:.2f} tokens/s")
+            print(f"Avg. latency:   {perf_ref['avg_latency_s']:.6f}s per sentence")
+            print(f"Peak memory:    {perf_ref['peak_memory_mb']:.2f} MB")
+            
+            print(f"\n=== Training Performance for {other_name} ===")
+            train_perf_ref = training_performance(optional_tokenizer, train_corpus, max_vocab_size)
+            print(f"Training time:  {train_perf_ref['train_time_s']:.4f}s")
+            print(f"Peak memory:    {train_perf_ref['peak_memory_mb']:.2f} MB")
+            print(f"Num. merges:    {int(train_perf_ref['num_merges'])}")
+            
+            print(f"\n=== Zipf Distribution Fit for {other_name} ===")
+            zipf_res_ref = zipf_distribution(optional_tokenizer, train_corpus)
+            print(f"Slope:          {zipf_res_ref['slope']:.4f}")
+            print(f"Intercept:      {zipf_res_ref['intercept']:.4f}")
+            print(f"Correlation:    {zipf_res_ref['correlation']:.4f}")
