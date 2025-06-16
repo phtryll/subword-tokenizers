@@ -1,3 +1,4 @@
+import os
 import argparse
 from functools import partial
 from argparse import RawTextHelpFormatter
@@ -5,6 +6,19 @@ from transformers import AutoTokenizer
 from source.utils import *
 from source.bpe import *
 from source.wordpiece import *
+
+
+# Small function to transform HF dataset to List[str]
+def build_toy_data(dataset, num_examples, feature_name):
+        toy_data = []
+        for example in dataset:
+            value = example.get(feature_name)
+            if value is not None:
+                toy_data.append(value)
+                if len(toy_data) == num_examples:
+                    break
+        return toy_data
+
 
 # Cleaner help display
 MyFormatter = partial(RawTextHelpFormatter, max_help_position=60, width=100)
@@ -17,9 +31,10 @@ TOKENIZERS = {
     "FastWordPiece": FastWP
 }
 
+# Defines the CLI
 def main():
     parser = argparse.ArgumentParser(
-        prog="tokenize",
+        prog="cli.py",
         description=(
             "Subword Tokenizers CLI\n\n"
             "A command-line tool to train and/or tokenize text using various subword tokenizers.\n"
@@ -48,6 +63,7 @@ def main():
     parser.add_argument(
         "--normalize_with",
         type=str,
+        metavar="HF_TOKENIZER",
         default="bert-base-uncased",
         help=("select HuggingFace tokenizer to use for normalization")
     )
@@ -55,15 +71,9 @@ def main():
     # Training
     parser.add_argument(
         "--train",
-        action="store_true",
-        help="enable training of the selected models on provided data."
-    )
-
-    # Selecting training data
-    parser.add_argument(
-        "--train-data",
         type=str,
-        help="path to .txt file (one sentence per line) used for training (required with --train)."
+        metavar="TRAIN_DATA",
+        help="Path to .txt file used for training (required to enable training)."
     )
 
     # Flag to use pretrained data from resources/
@@ -77,6 +87,7 @@ def main():
     parser.add_argument(
         "--tokenize",
         type=str,
+        metavar="TEST_DATA",
         help="String to tokenize or path to .txt file for tokenization."
     )
 
@@ -84,57 +95,13 @@ def main():
     parser.add_argument(
         "--max_vocab",
         type=int,
+        metavar="INTEGER",
         default=10_000,
         help="maximum vocabulary size for training"
-    )
-
-    # Path to training file #! Duplicate, work in progress..
-    parser.add_argument(
-        "--from-file",
-        action="store_true",
-        help="treat input as path to training file"
-    )
-
-    # Text to tokenize or path #! Duplicate, work in progress..
-    parser.add_argument(
-        "--input",
-        required=True,
-        help="Text to tokenize (or path to a file)"
     )
     
     # Store the arguments so that we can use them
     args = parser.parse_args()
-
-    # Get tokenizer
-    hf_tokenizer = AutoTokenizer.from_pretrained(args.normalize_with)
-
-    # Load training corpus
-    if args.from_file:
-        with open(args.input, "r", encoding="utf-8") as f:
-            corpus = f.read().splitlines()
-    else:
-        corpus = [args.input]
-
-    # Instantiate and train
-    TokenizerClass = TOKENIZERS[args.model]
-    tokenizer = TokenizerClass(tokenizer=hf_tokenizer)
-    tokenizer.train(max_vocab=args.max_vocab, corpus=corpus)
-
-    # @MG Let's include options for end-to-end tokenization,
-    # @MG either in an E2E implementation or in this program.
-    for line in corpus:
-        tokens = tokenizer.tokenize(line)
-        print(f"{line} --> {' '.join(tokens)}")
-
-    # @MG Let's include pre-trained versions.
-    '''
-    if args.load_pretrained:
-        tokenizer = TokenizerClass.from_files("merges.txt", "vocab.json", tokenizer=hf_tokenizer)
-    else:
-        tokenizer = TokenizerClass(tokenizer=hf_tokenizer)
-        tokenizer.train(corpus=corpus, max_vocab=args.max_vocab)
-    '''
-
 
 # Runs the CLI
 if __name__ == "__main__":

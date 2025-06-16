@@ -1,3 +1,147 @@
+import os
+import argparse
+from functools import partial
+from argparse import RawTextHelpFormatter
+from transformers import AutoTokenizer
+from source.utils import *
+from source.bpe import *
+from source.wordpiece import *
+
+
+# Cleaner help display
+MyFormatter = partial(RawTextHelpFormatter, max_help_position=60, width=100)
+
+# Available tokenizers
+TOKENIZERS = {
+    "NaiveBPE": NaiveBPE,
+    "NaiveWordPiece": NaiveWP,
+    "FastBPE": FastBPE,
+    "FastWordPiece": FastWP
+}
+
+# Defines the CLI
+def main():
+    parser = argparse.ArgumentParser(
+        prog="cli.py",
+        description=(
+            "Subword Tokenizers CLI\n\n"
+            "A command-line tool to train and/or tokenize text using various subword tokenizers.\n"
+        ),
+        formatter_class=MyFormatter,
+        epilog=(
+            "Usage examples:\n"
+            "Train models:\n"
+            "\tpython cli.py --models NaiveBPE FastBPE --train --max-vocab 5000 --train-data data/train.txt\n\n"
+            "Tokenize a single string:\n"
+            "\tpython cli.py --models FastBPE --tokenize \"Hello world.\"\n\n"
+            "Batch tokenize from file:\n"
+            "\tpython cli.py --models FastWordPiece --tokenize data/test.txt\n\n\n"
+        )
+    )
+    
+    # Selecting a model
+    parser.add_argument(
+        "--model",
+        choices=TOKENIZERS,
+        required=True,
+        help=(f"select tokenizer to use from: {', '.join(TOKENIZERS.keys())}")
+    )
+
+    # Select normalization model
+    parser.add_argument(
+        "--normalize_with",
+        type=str,
+        metavar="HF_TOKENIZER",
+        default="bert-base-uncased",
+        help=("select HuggingFace tokenizer to use for normalization")
+    )
+
+    # Training
+    parser.add_argument(
+        "--train",
+        type=str,
+        metavar="TRAIN_DATA",
+        help="Path to .txt file used for training (required to enable training)."
+    )
+
+    # Flag to use pretrained data from resources/
+    parser.add_argument(
+        "--pretrained",
+        action="store_true",
+        help="load pretrained merges and vocabulary from resources (skip training)"
+    )
+
+    # Tokenize a string or a list of strings in a .txt file
+    parser.add_argument(
+        "--tokenize",
+        type=str,
+        metavar="TEST_DATA",
+        help="String to tokenize or path to .txt file for tokenization."
+    )
+
+    # Select maximum vocabulary size for training (hyperparameter)
+    parser.add_argument(
+        "--max_vocab",
+        type=int,
+        metavar="INTEGER",
+        default=10_000,
+        help="maximum vocabulary size for training"
+    )
+    
+    # Store the arguments so that we can use them
+    args = parser.parse_args()
+
+    # Get tokenizer
+    hf_tokenizer = AutoTokenizer.from_pretrained(args.normalize_with)
+
+    # Load training corpus
+    if not args.train:
+        parser.error("--train requires TRAIN_DATA (a string or path to a .txt file)")
+    train_data = args.train
+    if os.path.isfile(train_data):
+        with open(train_data, "r", encoding="utf-8") as f:
+            corpus = f.read().splitlines()
+    else:
+        corpus = [train_data]
+
+    # Instantiate and train
+    TokenizerClass = TOKENIZERS[args.model]
+    tokenizer = TokenizerClass(tokenizer=hf_tokenizer)
+    tokenizer.train(max_vocab=args.max_vocab, corpus=corpus)
+
+    # @MG Let's include options for end-to-end tokenization,
+    # @MG either in an E2E implementation or in this program.
+    for line in corpus:
+        tokens = tokenizer.tokenize(line)
+        print(f"{line} --> {' '.join(tokens)}")
+
+    # @MG Let's include pre-trained versions.
+    '''
+    if args.load_pretrained:
+        tokenizer = TokenizerClass.from_files("merges.txt", "vocab.json", tokenizer=hf_tokenizer)
+    else:
+        tokenizer = TokenizerClass(tokenizer=hf_tokenizer)
+        tokenizer.train(corpus=corpus, max_vocab=args.max_vocab)
+    '''
+
+
+# Runs the CLI
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+### MAIN.py
+
+
+
+
+
 import argparse
 from argparse import RawTextHelpFormatter
 import os
@@ -155,3 +299,59 @@ if __name__ == "__main__":
             for var, model in tokenizer_instances.items():
                 tokens = model.tokenize(text)
                 print(f"{var} → {tokens}")
+
+
+
+
+
+### test.py
+
+
+
+
+from source.utils import *
+from source.bpe import *
+from source.wordpiece import *
+from source.benchmarks import *
+from datasets import load_dataset
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+import random
+
+if __name__ == "__main__":
+    def build_toy_data(dataset, num_examples, feature_name):
+        toy_data = []
+        for example in dataset:
+            value = example.get(feature_name)
+            if value is not None:
+                toy_data.append(value)
+                if len(toy_data) == num_examples:
+                    break
+        return toy_data
+
+    # Build small corpus
+    # Training
+    fleurs_train_fr = load_dataset("google/fleurs", "fr_fr", split = "train")
+    toy_corpus_fr = build_toy_data(fleurs_train_fr, 5000, 'raw_transcription')
+
+    # Testing
+    fleurs_test_fr = load_dataset("google/fleurs", "fr_fr", split = "test")
+    test_text_fr = build_toy_data(fleurs_test_fr, 50, 'raw_transcription')
+
+    # Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
+    # Internal variables
+    toy_corpus = toy_corpus_fr
+    test_text = random.choice(test_text_fr)
+
+    # Load and train models
+    bpe_naive = NaiveBPE(tokenizer) # type: ignore
+    bpe_optim = FastBPE(tokenizer)
+    bpe_optim.train(toy_corpus, 570)
+    bpe_naive.train(toy_corpus, 570)
+
+    # print(test_text)
+    # print(bpe_naive.tokenize("Hello, this is a test."))
+    # print(bpe_optim.tokenize(test_text))
+
+    benchmarks(bpe_naive, [test_text], 600, bpe_optim)
