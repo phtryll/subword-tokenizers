@@ -1,65 +1,154 @@
 # Subword Tokenizers
 
-A collection of naive and optimized implementations of Byte Pair Encoding (BPE) and WordPiece tokenizers, along with a benchmarking suite to evaluate their performance, efficiency, and tokenization quality.
+[![Build Status](https://img.shields.io/travis/yourusername/subword-tokenizers.svg)](https://travis-ci.org/yourusername/subword-tokenizers)  
+[![Coverage Status](https://img.shields.io/codecov/c/gh/yourusername/subword-tokenizers.svg)](https://codecov.io/gh/yourusername/subword-tokenizers)  
+[![PyPI Version](https://img.shields.io/pypi/v/subword-tokenizers.svg)](https://pypi.org/project/subword-tokenizers)  
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Overview
+A collection of naive and optimized implementations of Byte-Pair Encoding (BPE) and WordPiece tokenizers, plus a comprehensive benchmarking suite to evaluate their quality and performance.
 
-This project includes several subword tokenizers that implement popular algorithms used in natural language processing:
+## Table of Contents
 
-- **Byte Pair Encoding (BPE):** Both naive and optimized implementations for learning subword vocabularies based on the most frequent pairs of bytes or characters.
-- **WordPiece:** A tokenizer inspired by Google's WordPiece algorithm, commonly used in models like BERT.
-- **Benchmarking Suite:** Tools to evaluate the speed, memory usage, and quality of tokenization produced by each implementation.
+- [Subword Tokenizers](#subword-tokenizers)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Training](#training)
+    - [Tokenizing](#tokenizing)
+    - [Benchmarking](#benchmarking)
+    - [Python API Tutorial](#python-api-tutorial)
+  - [CLI Reference](#cli-reference)
+  - [Project Structure](#project-structure)
 
-## Project structure
+## Features
 
-- `custom_tokenizers.py` — Implementations of the tokenizers.
-- `custom_benchmarks.py` — Benchmarking and evaluation scripts.
-- `main.py` — Command-line interface for training, tokenizing, and benchmarking.
-- `testing.py` — This file is a temporary testing file and should be removed once the project is ready.
-- `data/`
-  - `raw/` — Directory for storing raw input text files (`.txt`).
-  - `processed/` — Directory for storing processed data and outputs.
-  - `models/` — Directory for saving trained tokenizer models.
+- **Naive BPE & Fast-BPE**  
+  – Learn subword vocabularies by byte-pair merges; optimized version uses a trie for speed.  
+- **Naive WordPiece & Fast-WordPiece**  
+  – Implements Google’s WordPiece algorithm; fast variant uses Aho–Corasick trie for linear-time tokenization.  
+- **Benchmarking Suite**  
+  – Measures tokenization quality (fragmentation, compression, Zipf fit), speed & memory, training performance.  
+- **Flexible CLI**  
+  – Train, tokenize, and benchmark single or multiple models via simple flags.  
+- **Python API**  
+  – Import tokenizers and benchmarks directly in your own scripts.  
 
 ## Installation
 
-To set up the project, you can install the required dependencies with:
+Clone the repo and install dependencies:
 
 ```bash
+git clone https://github.com/phtryll/subword-tokenizers.git
+cd subword-tokenizers
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-Alternatively, if you only want the core libraries, you can install:
-
-```bash
-pip install transformers datasets
 ```
 
 ## Usage
 
-The main interface is provided by `main.py`, which supports several command-line options:
+### Training
 
-- `--models` — Specify which tokenizer models to use or train.
-- `--train` — Train a tokenizer model on the provided data.
-- `--max-vocab` — Set the maximum vocabulary size for training.
-- `--train-data` — Path to the training data file (usually in `data/raw/`).
-- `--tokenize` — Tokenize input text using a trained model.
-- `--merges` — Specify the number of merge operations for BPE.
-
-### Examples
-
-- **Training a tokenizer:**
+Train one or more models on a corpus of sentences.
 
 ```bash
-python main.py --train --models NaiveBPE --max-vocab 10000 --train-data data/raw/sample.txt
+python cli.py --model NaiveBPE --train data/train.txt --max-vocab 1000
 ```
 
-- **Tokenizing text:**
+### Tokenizing
+
+Tokenize a single sentence with one or multiple models:
 
 ```bash
-python main.py --tokenize --models TrieBPE --train-data data/raw/sample.txt
+python cli.py --model NaiveBPE FastBPE --tokenize "This is a test sentence."
 ```
 
-## Data
+Or tokenize all sentences in a file:
 
-Place your raw text files (`.txt`) in the `data/raw/` directory. Processed outputs, including tokenized text and trained models, will be saved under `data/processed/` and `data/models/` respectively. This structure helps keep raw data separate from generated artifacts.
+```bash
+python cli.py --model WordPiece --tokenize data/raw/input.txt
+```
+
+You can also train before tokenization:
+
+```bash
+python cli.py --model NaiveBPE FastBPE --train data/train.txt --tokenize "This is a test sentence."
+```
+
+### Benchmarking
+
+Run full benchmarks comparing models on test and train data:
+
+```bash
+python cli.py --model FastBPE WordPiece --benchmark data/raw/test.txt data/raw/train.txt --max-vocab 1000
+```
+
+### Python API Tutorial
+
+You can also use the tokenizers directly from Python:
+
+```python
+from transformers import AutoTokenizer
+from source.bpe import NaiveBPE
+from source.wordpiece import FastWordPiece
+from source.benchmarks import benchmarks
+
+# Initialize HuggingFace tokenizer
+hf_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
+# Instantiate tokenizer models
+naive_bpe = NaiveBPE(hf_tokenizer)
+fast_wp = FastWordPiece(hf_tokenizer)
+
+# Training
+corpus = ["This is a sentence.", "Another example sentence."]
+naive_bpe.train(corpus, max_vocab_size=1000)
+fast_wp.train(corpus, max_vocab_size=1000)
+
+# Tokenization
+test_text = "Hello, world!"
+print("NaiveBPE:", naive_bpe.tokenize(test_text))
+print("FastWordPiece:", fast_wp.tokenize(test_text))
+
+# Benchmarking
+benchmarks(
+    naive_bpe,
+    [test_text],
+    max_vocab_size=1000,
+    train_corpus=corpus,
+    reference_tokenizers=[fast_wp]
+)
+```
+
+## CLI Reference
+
+| Flag                   | Args                         | Default               | Description                                                                                                  |
+|------------------------|------------------------------|-----------------------|--------------------------------------------------------------------------------------------------------------|
+| `-h`, `--help`         |                              |                       | Show this help message and exit                                                                             |
+| `--model`              | `MODEL1 [MODEL2 ...]`        | _required_            | Select primary tokenizer model (required) and optional second model for comparison: NaiveBPE, NaiveWordPiece, FastBPE, FastWordPiece |
+| `--normalize_with`     | `HF_TOKENIZER`               | `bert-base-uncased`   | Select HuggingFace tokenizer to use for normalization                                                       |
+| `--train`              | `TRAIN_DATA`                 |                       | Path to `.txt` file used for training (required to enable training)                                        |
+| `--pretrained`         |                              |                       | NOT IMPLEMENTED — load pretrained merges and vocabulary from resources (skip training)                      |
+| `--tokenize`           | `TEST_DATA`                  |                       | String to tokenize or path to `.txt` file for tokenization                                                 |
+| `--max_vocab`          | `INTEGER`                    | `1000`                | Maximum vocabulary size for training                                                                        |
+| `--benchmark`          | `TEST_INPUT TRAIN_INPUT`     |                       | Benchmark models: TEST_INPUT (string or .txt file) and TRAIN_INPUT (.txt file path)                        |
+
+## Project Structure
+
+```plaintext
+.
+├── data/
+│   └── train.txt             # Dummy training corpus
+├── resources/
+│   ├── bpe/                  # Pretrained BPE vocabulary & merges
+│   └── wordpiece/            # Pretrained WordPiece vocabulary & merges
+├── source/
+│   ├── utils.py              # Parent classes & trie implementations
+│   ├── bpe.py                # Naive & optimized BPE implementations
+│   ├── wordpiece.py          # Naive & fast WordPiece implementations
+│   └── benchmarks.py         # Quality & performance metrics
+├── cli.py                    # Main CLI entry point
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
+```
