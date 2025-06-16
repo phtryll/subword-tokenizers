@@ -1,8 +1,8 @@
 # Subword Tokenizers
 
-[![Build Status](https://img.shields.io/travis/yourusername/subword-tokenizers.svg)](https://travis-ci.org/yourusername/subword-tokenizers)  
+<!-- [![Build Status](https://img.shields.io/travis/yourusername/subword-tokenizers.svg)](https://travis-ci.org/yourusername/subword-tokenizers)  
 [![Coverage Status](https://img.shields.io/codecov/c/gh/yourusername/subword-tokenizers.svg)](https://codecov.io/gh/yourusername/subword-tokenizers)  
-[![PyPI Version](https://img.shields.io/pypi/v/subword-tokenizers.svg)](https://pypi.org/project/subword-tokenizers)  
+[![PyPI Version](https://img.shields.io/pypi/v/subword-tokenizers.svg)](https://pypi.org/project/subword-tokenizers)   --> 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A collection of naive and optimized implementations of Byte-Pair Encoding (BPE) and WordPiece tokenizers, plus a comprehensive benchmarking suite to evaluate their quality and performance.
