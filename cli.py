@@ -75,8 +75,9 @@ def main():
     # Reset pretrained resources for selected models
     parser.add_argument(
         "--save",
-        action="store_true",
-        help="save training merges/vocab in resources/TOKENIZER_NAME for later use"
+        type=str,
+        metavar="PATH",
+        help="save training merges/vocab in specified path for later use"
     )
 
     # Flag to use pretrained data from resources/
@@ -167,7 +168,7 @@ def main():
             print(f"Training {name} with max_vocab={args.max_vocab} on {len(corpus)} examples...")
             tok.train(corpus, args.max_vocab)
             if args.save:
-                resource_path = os.path.join("resources", args.pretrained, name)
+                resource_path = os.path.join("resources", args.save, name)
                 tok.save_resources(resource_path)
                 print(f"Saved merges and vocab for {name} to {resource_path}")
 
