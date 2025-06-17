@@ -1,5 +1,6 @@
 from transformers import PreTrainedTokenizerFast
 from typing import List, Tuple, Optional
+import re
 
 class SubwordTokenizer:
     """A parent class for subword tokenizers."""
@@ -136,3 +137,18 @@ class WPTrie_E2E(object):
                 if not v.char.isalnum():
                     v.failure_link = self.root_p
                 v_queue.append(v)
+
+def recover_sentence(tokens):
+  # This function does NOT reliably reconstruct the
+  # original sentence, as whitespace information is lost
+  # Does some common-sense punctuation handling
+
+  outseq = ' '.join(tokens)
+  # Combine subwords
+  outseq = re.sub(r'\s##(\S)', r'\g<1>', outseq)
+  # Remove left space before appropriate punctuation
+  outseq = re.sub(r'\s(\.|,|\)|\]|\\|’|-|\'|\\|/)', r'\g<1>', outseq)
+  # Remove right space after appropriate punctuation
+  outseq = re.sub(r'(\(|\[|\\|’|-|\'|\\|/)\s', r'\g<1>', outseq)
+
+  return outseq
