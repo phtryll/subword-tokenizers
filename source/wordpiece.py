@@ -90,7 +90,7 @@ class NaiveWP(SubwordTokenizer):
             # Replace the pair in corpus
             self.corpus_as_symbols = [
                 (self._replace_pair(best_pair, symbols), freq)
-                for symbols, freq in corpus_as_symbols
+                for symbols, freq in self.corpus_as_symbols
             ]
 
     def _replace_pair(self, pair, word):
