@@ -397,7 +397,9 @@ def benchmarks(
     test_corpus: List[str],
     max_vocab_size: int,
     train_corpus: List[str] = [],
-    reference_tokenizers: List[Any] = []
+    reference_tokenizers: List[Any] = [],
+    pretrained: bool = False,
+    pretrained_path: str = ""
 ) -> None:
     """
     Run all benchmark functions and print results to the console.
@@ -413,8 +415,13 @@ def benchmarks(
     # Get the names of the tokenizers
     name1 = tokenizer.__class__.__name__
 
-    # Train on the given data
-    tokenizer.train(train_corpus, max_vocab_size)
+    if pretrained:
+        tokenizer.load_resources(pretrained_path)
+    else:
+        if not train_corpus:
+            raise ValueError("train_corpus is required when not using a pretrained tokenizer.")
+        # Train on the given data
+        tokenizer.train(train_corpus, max_vocab_size)
 
     # Run metrics
     print(f"=== Tokenization Benchmarks for {name1} ===")
@@ -444,17 +451,18 @@ def benchmarks(
     print(f"Avg. latency:   {perf['avg_latency_s']:.6f}s per sentence")
     print(f"Peak memory:    {perf['peak_memory_mb']:.2f} MB")
 
-    print("\n=== Training Performance ===")
-    train_perf = training_performance(tokenizer, train_corpus, max_vocab_size)
-    print(f"Training time:  {train_perf['train_time_s']:.4f}s")
-    print(f"Peak memory:    {train_perf['peak_memory_mb']:.2f} MB")
-    print(f"Num. merges:    {int(train_perf['num_merges'])}")
+    if not pretrained:
+        print("\n=== Training Performance ===")
+        train_perf = training_performance(tokenizer, train_corpus, max_vocab_size)
+        print(f"Training time:  {train_perf['train_time_s']:.4f}s")
+        print(f"Peak memory:    {train_perf['peak_memory_mb']:.2f} MB")
+        print(f"Num. merges:    {int(train_perf['num_merges'])}")
 
-    print("\n=== Zipf Distribution Fit ===")
-    zipf_res = zipf_distribution(tokenizer, train_corpus)
-    print(f"Slope:          {zipf_res['slope']:.4f}")
-    print(f"Intercept:      {zipf_res['intercept']:.4f}")
-    print(f"Correlation:    {zipf_res['correlation']:.4f}")
+        print("\n=== Zipf Distribution Fit ===")
+        zipf_res = zipf_distribution(tokenizer, train_corpus)
+        print(f"Slope:          {zipf_res['slope']:.4f}")
+        print(f"Intercept:      {zipf_res['intercept']:.4f}")
+        print(f"Correlation:    {zipf_res['correlation']:.4f}")
 
     # If additional tokenizers were provided, run the same metrics for each
     if reference_tokenizers:
