@@ -240,3 +240,17 @@ class FastBPE(NaiveBPE):
             raise TypeError("Text must be a string.")
         pre = [w for w, _ in self.preprocessing([text])[0]]
         return [tok for w in pre for tok in self.encode_word(w)]
+
+    def load_resources(self, path: str) -> None:
+        """
+        Load BPE merges and vocabulary, and rebuild BPE ranks for FastBPE.
+        """
+        super().load_resources(path)
+        # Rebuild BPE ranks for inference
+        self._bpe_ranks = {pair: i for i, pair in enumerate(self.merges_list)}
+
+    def save_resources(self, path: str) -> None:
+        """
+        Save BPE merges and vocabulary using the NaiveBPE implementation.
+        """
+        super().save_resources(path)

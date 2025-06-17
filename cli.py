@@ -142,9 +142,6 @@ def main():
         for name, tok in tokenizer_instances.items():
             resource_path = os.path.join("resources/", name)
             tok.load_resources(resource_path)
-            # Rebuild trie for FastBPE
-            if hasattr(tok, "trie"):
-                tok.trie = Trie(tok.vocab)
             print(f"Loaded saved merges and vocab for {name} from {resource_path}")
 
     # Print the loaded models

@@ -2,7 +2,7 @@ import os
 import json
 from source.utils import SubwordTokenizer, WPTrie_E2E
 from collections import Counter
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 class NaiveWP(SubwordTokenizer):
     """
@@ -76,7 +76,7 @@ class NaiveWP(SubwordTokenizer):
             if not scores:
                 break
             # Choose the pair with the highest score
-            high_score = max(scores, key=scores.get)
+            high_score = max(scores, key=scores.get) # type: ignore
 
             # Record merge, update vocabulary
             merged = high_score[0] + high_score[1][2:]
@@ -299,3 +299,17 @@ class FastWP(NaiveWP):
             node = node.children[s[i]]
             i = i + 1
         return tokens, node, i
+
+    def load_resources(self, path: str) -> None:
+        """
+        Load WordPiece merges and vocabulary, and rebuild vocabulary trie for FastWP.
+        """
+        super().load_resources(path)
+        # Rebuild vocabulary trie for inference
+        self.vocab_trie = WPTrie_E2E(self.vocab)
+
+    def save_resources(self, path: str) -> None:
+        """
+        Save WordPiece merges and vocabulary using the NaiveWP implementation.
+        """
+        super().save_resources(path)
