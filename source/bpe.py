@@ -120,6 +120,9 @@ class NaiveBPE(SubwordTokenizer):
         for pair in self.merges_list:
             word_split = self._replace_pair(pair, word_split)
 
+        if len(word_split)>1:
+          word_split[1::] = ['##' + s for s in word_split[1::]]
+
         return word_split
 
     def tokenize(self, text: str) -> List[str]:
@@ -227,6 +230,9 @@ class FastBPE(NaiveBPE):
             if len(symbols) == 1:
                 break
             pairs = self._pairs(symbols)
+
+        if len(symbols)>1:
+          symbols[1::] = ['##' + s for s in symbols[1::]]
 
         return symbols
 
