@@ -2,7 +2,7 @@ import os
 import json
 from source.utils import SubwordTokenizer, WPTrie_E2E
 from collections import Counter
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 class NaiveWP(SubwordTokenizer):
     """
@@ -22,7 +22,6 @@ class NaiveWP(SubwordTokenizer):
         super().__init__(tokenizer)
         # For lazy/incremental training
         self.vocab: set[str] = set()
-        self.merges_list: List[Tuple[str,str]] = []
         # Hold (symbol_sequence, frequency) across calls
         self.corpus_as_symbols: List[Tuple[List[str], int]] = []
 
@@ -41,55 +40,59 @@ class NaiveWP(SubwordTokenizer):
         if not isinstance(max_vocab, int):
             raise TypeError("max_vocab must be an int.")
 
+        self.reset()
+
         # Preprocess the corpus using parent method
         prepd_corpus = super().preprocessing(corpus)
-
         # Accumulate data into state
-        words = [w for example in prepd_corpus for w, _ in example]
-        freqs = Counter(words)
-        for w, freq in freqs.items():
-            # create symbol list with '##' prefixes
-            seq = [w[0]] + [f'##{c}' for c in w[1:]]
-            self.corpus_as_symbols.append((seq, freq))
-            # update vocab
-            self.vocab.update(seq)
+        corpus_as_words = [word for example in prepd_corpus for word, position in example]
+        word_freqs = Counter(corpus_as_words)
+        
+        # Represent each word as a list of symbols
+        new_symbols = [
+            # Prefix all but the first with ##
+            ([word[0]] + [f"##{c}" for c in word[1:]], freq)
+            for word, freq in word_freqs.items()
+        ]
+        self.corpus_as_symbols.extend(new_symbols)
 
-        # Merge loop: expand vocabulary until limit
+        # Initialize the vocabulary with all symbols (allow incremental training)
+        initial_symbols = {s for symbols, _ in new_symbols for s in symbols}
+        self.vocab |= initial_symbols
+        
+        # -- Main loop - initialize until max_vocab is reached
         while len(self.vocab) < max_vocab:
-            # count symbol and adjacent-pair frequencies
-            pair_freqs: Counter[Tuple[str,str]] = Counter()
-            symbol_freqs: Counter[str] = Counter()
-            for seq, freq in self.corpus_as_symbols:
-                for sym in seq:
-                    symbol_freqs[sym] += freq
-                for i in range(len(seq)-1):
-                    pair = (seq[i], seq[i+1])
-                    pair_freqs[pair] += freq
+            # Get frequencies of adjacent symbol pairs
+            pair_freqs = Counter()
+            for symbols, freq in self.corpus_as_symbols:
+                for i in range(len(symbols) - 1):
+                    pair_freqs[(symbols[i], symbols[i+1])] += freq
+            if not pair_freqs:
+                break
+                
+            # Count frequencies of individual symbols
+            symbol_freqs = Counter()
+            for symbols, freq in self.corpus_as_symbols:
+                for s in symbols:
+                    symbol_freqs[s] += freq
 
-            # score = freq(ab) / freq(a)*freq(b), guard zero division
+            # Calculate scores for each pair
             scores = {
-                pair: freq / max(symbol_freqs[pair[0]] * symbol_freqs[pair[1]], 1)
+                pair: freq / (symbol_freqs[pair[0]] * symbol_freqs[pair[1]])
                 for pair, freq in pair_freqs.items()
             }
-
-            # Break if no merges left
             if not scores:
                 break
-            # Choose the pair with the highest score
-            high_score = max(scores, key=scores.get) # type: ignore
 
-            # Record merge, update vocabulary
-            merged = high_score[0] + high_score[1][2:]
-            # Stop if no new token
-            if merged in self.vocab:
-                break
-            self.merges_list.append(high_score)
-            self.vocab.add(merged)
-
-            # Apply merge across all accumulated symbols
+            # Choose pair with highest score
+            best_pair = max(scores, key=scores.get) # type:ignore
+            # Add merged token to vocab
+            merged_token = best_pair[0] + best_pair[1][2:]
+            self.vocab.add(merged_token)
+            # Replace the pair in corpus
             self.corpus_as_symbols = [
-                (self._replace_pair(high_score, seq), freq)
-                for seq, freq in self.corpus_as_symbols
+                (self._replace_pair(best_pair, symbols), freq)
+                for symbols, freq in self.corpus_as_symbols
             ]
 
     def _replace_pair(self, pair, word):
@@ -128,17 +131,24 @@ class NaiveWP(SubwordTokenizer):
         Returns:
             List[str]: A list of subword tokens, or ["[UNK]"] if not tokenizable.
         """
-        if not word:
-            return ["[UNK]"]
-        # Start with char-level segmentation from training
-        seq: List[str] = [word[0]] + [f'##{c}' for c in word[1:]]
-        # Apply learned merges greedily
-        for pair in self.merges_list:
-            seq = self._replace_pair(pair, seq)
-        # If nothing matches vocabulary, fallback to [UNK]
-        if any(tok not in self.vocab for tok in seq):
-            return ["[UNK]"]
-        return seq
+        tokens = []
+
+        # Try longest possible substring in vocabulary
+        while len(word) > 0:
+            i = len(word)
+            while i > 0 and word[:i] not in self.vocab:
+                i -= 1        
+            if i == 0:
+                return ["[UNK]"]
+
+            tokens.append(word[:i])
+            word = word[i:]
+    
+            # Prepend '##' if inside word
+            if len(word) > 0:
+                word = f"##{word}"
+
+        return tokens
 
     def tokenize(self, text):
         """
@@ -157,7 +167,6 @@ class NaiveWP(SubwordTokenizer):
         # Preprocess input text
         pre_tokenized_corpus = self.preprocessing([text])
         pre_tokenized_text = [word for word, offset in pre_tokenized_corpus[0]]
-
         # Encode each word and flatten the result
         encoded_words: List[List[str]] = [self.encode_word(word) for word in pre_tokenized_text]
         return [tok for sub in encoded_words for tok in sub]
@@ -165,36 +174,28 @@ class NaiveWP(SubwordTokenizer):
     def reset(self) -> None:
         """Reset all learned state."""
         self.vocab.clear()
-        self.merges_list.clear()
         self.corpus_as_symbols.clear()
     
     def save_resources(self, path: str) -> None:
         """
-        Save the current merges list and vocabulary to JSON files.
+        Save the current vocabulary to JSON files.
 
         Args:
-            path (str): Directory path where 'merges.json' and 'vocab.json' will be saved.
+            path (str): Directory path where 'vocab.json' will be saved.
         """
         os.makedirs(path, exist_ok=True)
-        merges_file = os.path.join(path, "merges.json")
         vocab_file = os.path.join(path, "vocab.json")
-        with open(merges_file, "w", encoding="utf-8") as f:
-            json.dump(self.merges_list, f, ensure_ascii=False)
         with open(vocab_file, "w", encoding="utf-8") as f:
             json.dump(list(self.vocab), f, ensure_ascii=False)
 
     def load_resources(self, path: str) -> None:
         """
-        Load merges list and vocabulary from JSON files in the specified directory.
+        Load vocabulary from JSON files in the specified directory.
 
         Args:
-            path (str): Directory path from which 'merges.json' and 'vocab.json' will be loaded.
+            path (str): Directory path from which 'vocab.json' will be loaded.
         """
-        merges_file = os.path.join(path, "merges.json")
         vocab_file = os.path.join(path, "vocab.json")
-        if os.path.isfile(merges_file):
-            with open(merges_file, "r", encoding="utf-8") as f:
-                self.merges_list = [tuple(pair) for pair in json.load(f)]
         if os.path.isfile(vocab_file):
             with open(vocab_file, "r", encoding="utf-8") as f:
                 self.vocab = set(json.load(f))
@@ -299,13 +300,13 @@ class FastWP(NaiveWP):
             node = node.children[s[i]]
             i = i + 1
         return tokens, node, i
-
+    
     def load_resources(self, path: str) -> None:
         """
         Load WordPiece merges and vocabulary, and rebuild vocabulary trie for FastWP.
         """
         super().load_resources(path)
-        # Rebuild vocabulary trie for inference
+        # Rebuild vocabulary trie
         self.vocab_trie = WPTrie_E2E(self.vocab)
 
     def save_resources(self, path: str) -> None:
