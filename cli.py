@@ -82,8 +82,9 @@ def main():
     # Flag to use pretrained data from resources/
     parser.add_argument(
         "--pretrained",
-        action="store_true",
-        help="load pretrained merges and vocabulary from resources/TOKENIZER_NAME"
+        type=str,
+        metavar="PATH",
+        help="load pretrained merges and vocabulary from specified path"
     )
 
     # Tokenize a string or a list of strings in a .json file
@@ -115,8 +116,9 @@ def main():
     # Reset pretrained resources for selected models
     parser.add_argument(
         "--reset",
-        action="store_true",
-        help="reset merges and vocabulary for selected models by deleting their resources directory"
+        type=str,
+        metavar="PATH",
+        help="reset merges/vocabulary for selected models by deleting their specified resources directory"
     )
     
     # Store the arguments so that we can use them
@@ -126,7 +128,7 @@ def main():
     if args.reset:
         # Remove resources for each selected model
         for model_name in args.model:
-            resource_path = os.path.join("resources", model_name)
+            resource_path = os.path.join("resources", args.reset, model_name)
             if os.path.isdir(resource_path):
                 shutil.rmtree(resource_path)
                 print(f"Reset resources for {model_name}")
@@ -147,7 +149,7 @@ def main():
     # Load saved merges and vocab if requested
     if args.pretrained:
         for name, tok in tokenizer_instances.items():
-            resource_path = os.path.join("resources/", name)
+            resource_path = os.path.join("resources", args.pretrained, name)
             tok.load_resources(resource_path)
             print(f"Loaded saved merges and vocab for {name} from {resource_path}")
 
@@ -165,7 +167,7 @@ def main():
             print(f"Training {name} with max_vocab={args.max_vocab} on {len(corpus)} examples...")
             tok.train(corpus, args.max_vocab)
             if args.save:
-                resource_path = os.path.join("resources/", name)
+                resource_path = os.path.join("resources", args.pretrained, name)
                 tok.save_resources(resource_path)
                 print(f"Saved merges and vocab for {name} to {resource_path}")
 
