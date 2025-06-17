@@ -1,3 +1,5 @@
+import os
+import json
 from source.utils import SubwordTokenizer, WPTrie_E2E
 from collections import Counter
 from typing import List, Tuple, Dict
@@ -165,6 +167,37 @@ class NaiveWP(SubwordTokenizer):
         self.vocab.clear()
         self.merges_list.clear()
         self.corpus_as_symbols.clear()
+    
+    def save_resources(self, path: str) -> None:
+        """
+        Save the current merges list and vocabulary to JSON files.
+
+        Args:
+            path (str): Directory path where 'merges.json' and 'vocab.json' will be saved.
+        """
+        os.makedirs(path, exist_ok=True)
+        merges_file = os.path.join(path, "merges.json")
+        vocab_file = os.path.join(path, "vocab.json")
+        with open(merges_file, "w", encoding="utf-8") as f:
+            json.dump(self.merges_list, f, ensure_ascii=False)
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            json.dump(list(self.vocab), f, ensure_ascii=False)
+
+    def load_resources(self, path: str) -> None:
+        """
+        Load merges list and vocabulary from JSON files in the specified directory.
+
+        Args:
+            path (str): Directory path from which 'merges.json' and 'vocab.json' will be loaded.
+        """
+        merges_file = os.path.join(path, "merges.json")
+        vocab_file = os.path.join(path, "vocab.json")
+        if os.path.isfile(merges_file):
+            with open(merges_file, "r", encoding="utf-8") as f:
+                self.merges_list = [tuple(pair) for pair in json.load(f)]
+        if os.path.isfile(vocab_file):
+            with open(vocab_file, "r", encoding="utf-8") as f:
+                self.vocab = set(json.load(f))
 
 
 class FastWP(NaiveWP):

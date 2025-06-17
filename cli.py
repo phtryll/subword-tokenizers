@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import argparse
 from functools import partial
 from argparse import RawTextHelpFormatter
@@ -7,18 +9,6 @@ from source.utils import *
 from source.bpe import *
 from source.wordpiece import *
 from source.benchmarks import benchmarks
-
-
-# Small function to transform HF dataset to List[str] -- UNUSED, FOR NOW KEEP
-def build_toy_data(dataset, num_examples, feature_name):
-        toy_data = []
-        for example in dataset:
-            value = example.get(feature_name)
-            if value is not None:
-                toy_data.append(value)
-                if len(toy_data) == num_examples:
-                    break
-        return toy_data
 
 
 # Cleaner help display
@@ -44,17 +34,17 @@ def main():
         epilog=(
             "Usage examples:\n"
             "Train models:\n"
-            "\tpython cli.py --models NaiveBPE FastBPE --train data/train.txt --max-vocab 1000\n\n"
+            "\tpython cli.py --models NaiveBPE FastBPE --train data/train.json --max-vocab 1000\n\n"
             "Tokenize a single string (with training):\n"
-            "\tpython cli.py --models FastBPE --train data/train.txt --tokenize \"Hello world.\"\n\n"
+            "\tpython cli.py --models FastBPE --train data/train.json --tokenize \"Hello world.\"\n\n"
             "Benchmark models:\n"
-            "\tpython cli.py --model NaiveBPE NaiveWordPiece FastBPE  --benchmark \"Ceci est un test.\" data/train.txt\n\n\n"
+            "\tpython cli.py --model NaiveBPE NaiveWordPiece FastBPE  --benchmark \"Ceci est un test.\" data/train.json\n\n\n"
         )
     )
     
     # Selecting a model
     parser.add_argument(
-        "--model",
+        "-m", "--model",
         choices=TOKENIZERS,
         nargs="+",
         metavar=("MODEL1", "MODEL2"),
@@ -79,27 +69,27 @@ def main():
         "--train",
         type=str,
         metavar="TRAIN_DATA",
-        help="path to .txt file used for training (required to enable training)"
+        help="path to .json file used for training (required to enable training)"
     )
 
     # Flag to use pretrained data from resources/
     parser.add_argument(
         "--pretrained",
         action="store_true",
-        help="NOT IMPLEMENTED -- load pretrained merges and vocabulary from resources (skip training)"
+        help="load pretrained merges and vocabulary from resources/TOKENIZER_NAME"
     )
 
-    # Tokenize a string or a list of strings in a .txt file
+    # Tokenize a string or a list of strings in a .json file
     parser.add_argument(
         "--tokenize",
         type=str,
         metavar="TEST_DATA",
-        help="string to tokenize or path to .txt file for tokenization"
+        help="string to tokenize or path to .json file for tokenization"
     )
 
     # Select maximum vocabulary size for training (hyperparameter)
     parser.add_argument(
-        "--max_vocab",
+        "-v", "--max_vocab",
         type=int,
         metavar="INTEGER",
         default=1_000,
@@ -108,16 +98,34 @@ def main():
     
     # Benchmark models
     parser.add_argument(
-        "--benchmark",
+        "-b", "--benchmark",
         nargs=2,
         type=str,
         metavar=("TEST_INPUT", "TRAIN_INPUT"),
-        help="benchmark models: TEST_INPUT (string or .txt file) and TRAIN_INPUT (.txt file path)"
+        help="benchmark models: TEST_INPUT (string or .json file) and TRAIN_INPUT (.json file path)"
+    )
+    
+    # Reset pretrained resources for selected models
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="reset merges and vocabulary for selected models by deleting their resources directory"
     )
     
     # Store the arguments so that we can use them
     args = parser.parse_args()
 
+    # Handle reset of resources
+    if args.reset:
+        # Remove resources for each selected model
+        for model_name in args.model:
+            resource_path = os.path.join("resources", model_name)
+            if os.path.isdir(resource_path):
+                shutil.rmtree(resource_path)
+                print(f"Reset resources for {model_name}")
+            else:
+                print(f"No resources to reset for {model_name}")
+        return
 
     # INITIALIZATION STAGE
     # Load the HF normalization tokenizer
@@ -128,54 +136,78 @@ def main():
     for model_name in args.model:
         # same pattern as: bpe_naive = NaiveBPE(tokenizer)
         tokenizer_instances[model_name] = TOKENIZERS[model_name](hf_tokenizer)
-    
+
+    # Load saved merges and vocab if requested
+    if args.pretrained:
+        for name, tok in tokenizer_instances.items():
+            resource_path = os.path.join("resources/", name)
+            tok.load_resources(resource_path)
+            # Rebuild trie for FastBPE
+            if hasattr(tok, "trie"):
+                tok.trie = Trie(tok.vocab)
+            print(f"Loaded saved merges and vocab for {name} from {resource_path}")
+
     # Print the loaded models
     print(f"Loaded tokenizer model(s): {', '.join(tokenizer_instances.keys())}")
     
     
     # Train each model if --train was provided
     if args.train:
-        # Load training data from the .txt file
+        # Load training data from the .json file
         with open(args.train, "r", encoding="utf-8") as f:
-            corpus = f.read().splitlines()
-        
+            corpus = json.load(f)
         # Train each selected tokenizer
         for name, tok in tokenizer_instances.items():
             print(f"Training {name} with max_vocab={args.max_vocab} on {len(corpus)} examples...")
             tok.train(corpus, args.max_vocab)
+            if args.pretrained:
+                resource_path = os.path.join("resources/", name)
+                tok.save_resources(resource_path)
+                print(f"Saved merges and vocab for {name} to {resource_path}")
 
     # Tokenization stage
     if args.tokenize:
         print("Tokenizing input...")
-        # Load test data: string or .txt file
-        if os.path.isfile(args.tokenize) and args.tokenize.lower().endswith('.txt'):
+        # Load test data: string or .json file
+        if os.path.isfile(args.tokenize) and args.tokenize.lower().endswith('.json'):
             with open(args.tokenize, "r", encoding="utf-8") as f:
-                inputs = f.read().splitlines()
+                inputs = json.load(f)
         else:
             inputs = [args.tokenize]
         # Tokenize each input with each model
+        output = {}
         for text in inputs:
             for name, tok in tokenizer_instances.items():
                 tokens = tok.tokenize(text)
                 print(f"[{name}] {tokens}")
+                # Optionally, store outputs for writing to .json if needed
+                if name not in output:
+                    output[name] = []
+                output[name].append(tokens)
+        # If input was from a .json file, write tokenized output to a .json file
+        if os.path.isfile(args.tokenize) and args.tokenize.lower().endswith('.json'):
+            out_path = args.tokenize.replace('.json', '.tokens.json')
+            with open(out_path, 'w', encoding='utf-8') as f:
+                json.dump(output, f, ensure_ascii=False, indent=2)
+            print(f"Tokenized output written to {out_path}")
 
     # Benchmark stage
     if args.benchmark:
         # Extract test and train inputs
         test_input_arg, train_input_arg = args.benchmark
 
-        # Load test inputs: string or .txt file
-        if os.path.isfile(test_input_arg) and test_input_arg.lower().endswith('.txt'):
+        # Load test inputs: string or .json file
+        if os.path.isfile(test_input_arg) and test_input_arg.lower().endswith('.json'):
             with open(test_input_arg, "r", encoding="utf-8") as f:
-                test_inputs = f.read().splitlines()
+                test_inputs = json.load(f)
         else:
             test_inputs = [test_input_arg]
 
-        # Load training inputs: must be .txt file path
-        if not os.path.isfile(train_input_arg) or not train_input_arg.lower().endswith('.txt'):
-            parser.error("--benchmark requires TRAIN_INPUT to be a valid .txt file path")
+        # Load training inputs: must be .json file path
+        if not os.path.isfile(train_input_arg) or not train_input_arg.lower().endswith('.json'):
+            parser.error("--benchmark requires TRAIN_INPUT to be a valid .json file path")
         with open(train_input_arg, "r", encoding="utf-8") as f:
-            train_inputs = f.read().splitlines()
+            train_inputs = json.load(f)
 
         # Determine primary and other tokenizers
         model_names = list(tokenizer_instances.keys())

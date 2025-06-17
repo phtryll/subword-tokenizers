@@ -1,4 +1,7 @@
+import os
+import json
 from source.utils import SubwordTokenizer
+from itertools import chain
 from collections import Counter, defaultdict
 from typing import List, Tuple, Dict
 
@@ -149,7 +152,38 @@ class NaiveBPE(SubwordTokenizer):
         self.vocab.clear()
         self.corpus_as_symbols.clear()
 
-from itertools import chain
+
+    def save_resources(self, path: str) -> None:
+        """
+        Save the learned BPE merges and vocabulary to JSON files in the given directory.
+
+        Args:
+            path (str): Directory where 'merges.json' and 'vocab.json' will be written.
+        """
+        os.makedirs(path, exist_ok=True)
+        merges_file = os.path.join(path, "merges.json")
+        vocab_file = os.path.join(path, "vocab.json")
+        with open(merges_file, "w", encoding="utf-8") as f:
+            json.dump(self.merges_list, f, ensure_ascii=False)
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            json.dump(list(self.vocab), f, ensure_ascii=False)
+
+    def load_resources(self, path: str) -> None:
+        """
+        Load BPE merges and vocabulary from JSON files in the specified directory.
+
+        Args:
+            path (str): Directory from which 'merges.json' and 'vocab.json' will be read.
+        """
+        merges_file = os.path.join(path, "merges.json")
+        vocab_file = os.path.join(path, "vocab.json")
+        if os.path.isfile(merges_file):
+            with open(merges_file, "r", encoding="utf-8") as f:
+                self.merges_list = [tuple(pair) for pair in json.load(f)]
+        if os.path.isfile(vocab_file):
+            with open(vocab_file, "r", encoding="utf-8") as f:
+                self.vocab = set(json.load(f))
+
 
 class FastBPE(NaiveBPE):
     """Faster inference-only subclass"""
