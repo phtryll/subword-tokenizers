@@ -1,20 +1,19 @@
-import heapq
 import os
 import json
-from source.utils import SubwordTokenizer, Trie
+from source.utils import SubwordTokenizer
+from itertools import chain
 from collections import Counter, defaultdict
-from transformers import PreTrainedTokenizerFast
 from typing import List, Tuple, Dict
 
 class NaiveBPE(SubwordTokenizer):
     """A subword tokenizer based on the Byte-Pair Encoding (BPE) algorithm."""
 
-    def __init__(self, tokenizer: PreTrainedTokenizerFast) -> None:
+    def __init__(self, tokenizer) -> None:
         """
         Initialize the Naive_BPE tokenizer.
 
         Args:
-            tokenizer (PreTrainedTokenizerFast): A tokenizer instance for preprocessing.
+            tokenizer (AutoTokenizer): A tokenizer instance for preprocessing.
         """
         super().__init__(tokenizer)
         # for lazy/incremental training
@@ -47,13 +46,13 @@ class NaiveBPE(SubwordTokenizer):
 
         return new_word
 
-    def train(self, corpus: List[str], max_vocab_size: int = 30_000) -> None:
+    def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
         """
         Train the BPE tokenizer on the corpus.
 
         Args:
             corpus (List[str]): A list of strings used to train the tokenizer.
-            max_vocab_size (int): The maximum size of the subword vocabulary.
+            max_vocab (int): The maximum size of the subword vocabulary.
 
         This method modifies the internal state by building the merge list; it does not return anything.
         """
@@ -61,7 +60,7 @@ class NaiveBPE(SubwordTokenizer):
         if not isinstance(corpus, list) or not all(isinstance(example, str) for example in corpus):
             raise TypeError("Corpus must be a list of strings.")
 
-        if not isinstance(max_vocab_size, int):
+        if not isinstance(max_vocab, int):
             raise TypeError("Maximum vocabulary size must be an integer.")
 
         # 2. Preprocess corpus into tokens with character offsets
@@ -80,7 +79,7 @@ class NaiveBPE(SubwordTokenizer):
         # self.corpus_as_symbols contains past and new data now
 
         # 4. Iteratively merge the most frequent symbol pairs
-        while len(self.vocab) < max_vocab_size:
+        while len(self.vocab) < max_vocab:
             # 4.1 Count symbol pair frequencies
             get_pair_freqs = Counter(
                 (seq[i], seq[i+1])
@@ -153,6 +152,7 @@ class NaiveBPE(SubwordTokenizer):
         self.vocab.clear()
         self.corpus_as_symbols.clear()
 
+
     def save_resources(self, path: str) -> None:
         """
         Save the learned BPE merges and vocabulary to JSON files in the given directory.
@@ -184,87 +184,59 @@ class NaiveBPE(SubwordTokenizer):
             with open(vocab_file, "r", encoding="utf-8") as f:
                 self.vocab = set(json.load(f))
 
+
 class FastBPE(NaiveBPE):
-    """
-    A subword tokenizer using Byte-Pair Encoding (BPE) with Trie-based lookup.
-    Learns merges from a training corpus and uses a Trie for greedy longest-prefix
-    matching during tokenization.
-    """
-    def __init__(self, tokenizer: PreTrainedTokenizerFast) -> None:
+    """Faster inference-only subclass"""
+    def __init__(self, tokenizer):
         super().__init__(tokenizer)
-        self.trie = Trie()  # built in training
+        self._bpe_ranks: Dict[Tuple[str, str], int] = {}
 
-    def train(self, corpus: List[str], max_vocab_size: int = 30_000) -> None:
-        """
-        Train the BPE tokenizer on the input corpus.
+    def train(self, corpus: List[str], max_vocab: int = 30_000) -> None:
+        super().train(corpus, max_vocab)
+        self._bpe_ranks = {pair: i for i, pair in enumerate(self.merges_list)}
 
-        Args:
-            corpus (List[str]): A list of strings to learn subword merges from.
-            max_vocab (int): The maximum size of the subword vocabulary.
-        """
-        super().train(corpus, max_vocab_size)
-        # Build Trie over vocabulary
-        self.trie = Trie(self.vocab)
-
-    def _encode_seq(self, seq: List[str]) -> List[str]:
-        """
-        Encode a list of symbols using greedy longest-prefix matching.
-
-        Args:
-            seq (List[str]): A list of character symbols to encode.
-
-        Returns:
-            List[str]: The sequence of matched subword tokens.
-        """
-        out, i = [], 0
-        while i < len(seq):
-            tok, length = self.trie.longest_match(seq, i)
-            if tok is None:
-                # no multi-char token matches here: emit single char
-                out.append(seq[i])
-                i += 1
-            else:
-                # emit the matched token, advance by its length
-                out.append(tok)
-                i += length
-        return out
+    def _pairs(self, seq: List[str]) -> set[Tuple[str, str]]:
+        return {(seq[i], seq[i+1]) for i in range(len(seq)-1)}
 
     def encode_word(self, word: str) -> List[str]:
-        """
-        Encode a single word into subword tokens.
+        symbols = list(word)
+        if len(symbols) < 2:
+            return symbols or [""]
 
-        Args:
-            word (str): The word to encode.
+        pairs = self._pairs(symbols)
+        while True:
+            best_pair = None
+            best_rank = float("inf")
+            for p in pairs:
+                r = self._bpe_ranks.get(p)
+                if r is not None and r < best_rank:
+                    best_rank, best_pair = r, p
+            if best_pair is None:
+                break
 
-        Returns:
-            List[str]: The subword tokens representing the input word.
-        """
-        # Try fast matching first
-        out = self._encode_seq(list(word))
-        if any(tok not in self.vocab for tok in out):
-            return super().encode_word(word)
-        return out
+            merged = best_pair[0] + best_pair[1]
+            new_syms: List[str] = []
+            i = 0
+            while i < len(symbols):
+                if (
+                    i < len(symbols) - 1
+                    and symbols[i] == best_pair[0]
+                    and symbols[i + 1] == best_pair[1]
+                ):
+                    new_syms.append(merged)
+                    i += 2
+                else:
+                    new_syms.append(symbols[i])
+                    i += 1
+            symbols = new_syms
+            if len(symbols) == 1:
+                break
+            pairs = self._pairs(symbols)
+
+        return symbols
 
     def tokenize(self, text: str) -> List[str]:
-        """
-        Tokenize text into a flat list of subword tokens.
-
-        Args:
-            text (str): The input text to tokenize.
-
-        Returns:
-            List[str]: The list of subword tokens extracted from the text.
-        """
         if not isinstance(text, str):
             raise TypeError("Text must be a string.")
-        
-        prepared = self.preprocessing([text])[0]
-        # Encode each word in turn and flatten
-        return [tok for w, _ in prepared for tok in self.encode_word(w)]
-
-    def reset(self) -> None:
-        """Reset all learned state."""
-        # Clear BPE state
-        super().reset()
-        # Rebuild an empty trie
-        self.trie = Trie()
+        pre = [w for w, _ in self.preprocessing([text])[0]]
+        return [tok for w in pre for tok in self.encode_word(w)]

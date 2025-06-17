@@ -1,6 +1,6 @@
 import os
 import json
-from source.utils import SubwordTokenizer, WPTrie, WPTrie_E2E
+from source.utils import SubwordTokenizer, WPTrie_E2E
 from collections import Counter
 from typing import List, Tuple, Dict
 
@@ -26,20 +26,20 @@ class NaiveWP(SubwordTokenizer):
         # Hold (symbol_sequence, frequency) across calls
         self.corpus_as_symbols: List[Tuple[List[str], int]] = []
 
-    def train(self, corpus, max_vocab_size: int = 30_000):
+    def train(self, corpus, max_vocab: int = 30_000):
         """
         Train the WordPiece tokenizer on the input corpus.
 
         Args:
             corpus (List[str]): A list of input strings.
-            max_vocab_size (int): The maximum number of vocabulary entries.
+            max_vocab (int): The maximum number of vocabulary entries.
         """
 
         if not isinstance(corpus, list) or not all(isinstance(example, str) for example in corpus):
             raise TypeError("corpus must be a list of strings.")
 
-        if not isinstance(max_vocab_size, int):
-            raise TypeError("max_vocab_size must be an int.")
+        if not isinstance(max_vocab, int):
+            raise TypeError("max_vocab must be an int.")
 
         # Preprocess the corpus using parent method
         prepd_corpus = super().preprocessing(corpus)
@@ -55,7 +55,7 @@ class NaiveWP(SubwordTokenizer):
             self.vocab.update(seq)
 
         # Merge loop: expand vocabulary until limit
-        while len(self.vocab) < max_vocab_size:
+        while len(self.vocab) < max_vocab:
             # count symbol and adjacent-pair frequencies
             pair_freqs: Counter[Tuple[str,str]] = Counter()
             symbol_freqs: Counter[str] = Counter()
@@ -199,9 +199,10 @@ class NaiveWP(SubwordTokenizer):
             with open(vocab_file, "r", encoding="utf-8") as f:
                 self.vocab = set(json.load(f))
 
+
 class FastWP(NaiveWP):
     """
-    A fast WordPiece tokenizer using a trie for efficient encoding.
+    A fast, boundary-aware WordPiece tokenizer with end-to-end punctuation handling.
 
     Extends Naive_WP by leveraging a trie structure (WPTrie) to enable
     linear-time subword tokenization via longest-prefix matching.
@@ -209,88 +210,15 @@ class FastWP(NaiveWP):
 
     def __init__(self, tokenizer):
         '''
-        Initialize the tokenizer.
-            tokenizer (AutoTokenizer): helper tokenizer for preprocessing.
-        '''
-        # Initialize the parent class
-        super().__init__(tokenizer)
-
-    def train(self, corpus, max_vocab_size=30_000):
-        """
-        Train the fast WordPiece tokenizer and build the vocabulary trie.
-
-        Args:
-            corpus (List[str]): List of training strings.
-            max_vocab_size (int): Maximum size of the subword vocabulary.
-        """
-        super().train(corpus, max_vocab_size)
-        self.vocab_trie = WPTrie(self.vocab)
-
-    def encode_word(self, word: str) -> List[str]:
-        """
-        Encode a single word using the WordPiece trie.
-
-        Args:
-            word (str): The word to tokenize.
-
-        Returns:
-            List[str]: A list of subword tokens, or ["[UNK]"] if not matched.
-        """
-        if not word:
-            return ["[UNK]"]
-        tokens, node, i = self.matchloop(word + " ", 0)
-        # failed if idx didn't consume full word or final node not valid state
-        if i < len(word) or node not in {self.vocab_trie.root, self.vocab_trie.root_sharp}:
-            return ["[UNK]"]
-        # fall back to NaiveWP if only a sharp-root end w/o tokens
-        if node is self.vocab_trie.root_sharp and not tokens:
-            return super().encode_word(word)
-        return tokens
-
-    def matchloop(self, s: str, i: int):
-        """
-        Traverse the WordPiece trie to find all matching subword tokens.
-
-        Args:
-            s (str): Input string with trailing space.
-            i (int): Starting index.
-
-        Returns:
-            Tuple[List[str], WPTrieNode, int]: Tokens found, final node, and end index.
-        """
-        node = self.vocab_trie.root
-        tokens: List[str] = []
-        while i < len(s):
-            # no outgoing edge, follow failure links
-            while s[i] not in node.children:
-                if node.failure_link is None:
-                    return tokens, node, i
-                tokens.extend(node.failure_pops)
-                node = node.failure_link
-            node = node.children[s[i]]
-            i = i + 1
-        return tokens, node, i
-
-
-class Fast_WP_E2E(FastWP):
-    """
-    A fast, boundary-aware WordPiece tokenizer with end-to-end punctuation handling.
-
-    Uses FastWP to tokenize input while respecting word boundaries and punctuation,
-    enabling more robust token segmentation for natural text.
-    """
-
-    def __init__(self, tokenizer):
-        '''
-        Initialize the Fast_WP_E2E tokenizer.
+        Initialize the FastWP tokenizer.
             tokenizer (AutoTokenizer): A tokenizer instance to assist with preprocessing.
         '''
         # Initialize the parent class
         super().__init__(tokenizer)
 
-    def train(self, corpus, max_vocab_size=30_000):
-        # Train using the NaiveWP/FastWP logic to build the vocabulary
-        super(FastWP, self).train(corpus, max_vocab_size)
+    def train(self, corpus, max_vocab=30_000):
+        # Train using the NaiveWP logic to build the vocabulary
+        super().train(corpus, max_vocab)
         # Build the custom E2E trie using the trained vocabulary
         self.vocab_trie = WPTrie_E2E(self.vocab)
 
@@ -346,3 +274,28 @@ class Fast_WP_E2E(FastWP):
         """
         # At or past end of string, or previous char is not alnum, or current char is space or not alnum
         return i > len(s) or (i > 0 and not s[i - 1].isalnum() or s[i].isspace() or not s[i].isalnum())
+
+
+    def matchloop(self, s: str, i: int):
+        """
+        Traverse the WordPiece trie to find all matching subword tokens.
+
+        Args:
+            s (str): Input string with trailing space.
+            i (int): Starting index.
+
+        Returns:
+            Tuple[List[str], TrieNode, int]: Tokens found, final node, and end index.
+        """
+        node = self.vocab_trie.root
+        tokens: List[str] = []
+        while i < len(s):
+            # no outgoing edge, follow failure links
+            while s[i] not in node.children:
+                if node.failure_link is None:
+                    return tokens, node, i
+                tokens.extend(node.failure_pops)
+                node = node.failure_link
+            node = node.children[s[i]]
+            i = i + 1
+        return tokens, node, i
