@@ -86,6 +86,7 @@ class NaiveWP(SubwordTokenizer):
 
             # Choose pair with highest score
             best_pair = max(scores, key=scores.get) # type:ignore
+
             # Add merged token to vocab
             merged_token = best_pair[0] + best_pair[1][2:]
             self.vocab.add(merged_token)
@@ -300,7 +301,7 @@ class FastWP(NaiveWP):
             node = node.children[s[i]]
             i = i + 1
         return tokens, node, i
-    
+
     def load_resources(self, path: str) -> None:
         """
         Load WordPiece merges and vocabulary, and rebuild vocabulary trie for FastWP.
