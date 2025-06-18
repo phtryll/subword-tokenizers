@@ -272,7 +272,7 @@ class FastWP(NaiveWP):
     def iswdbndry(self, seq, i):
         """
         Check if the current index is at a word or punctuation boundary.
-        Defining punctuation as any non-alphanumeric character
+        Defining punctuation as any non-alphanumeric, non-space character
 
         Args:
             s (str): Input string.
@@ -281,8 +281,11 @@ class FastWP(NaiveWP):
         Returns:
             bool: True if it's a word boundary, else False.
         """
-        # At or past end of string, or previous char is not alnum, or current char is space or not alnum
-        return i > len(seq) or (i > 0 and not seq[i - 1].isalnum() or seq[i].isspace() or not seq[i].isalnum())
+        # At or past end of string, or previous char is punctuation, or current char is space or punctuation
+        return i > len(seq) or (i > 0 and self.ispunc(seq[i-1])) or seq[i].isspace() or self.ispunc(seq[i])
+
+    def ispunc(self, c):
+        return (not c.isalnum()) and (not c.isspace())
 
 
     def matchloop(self, seq: str, i: int):
