@@ -4,6 +4,7 @@ from source.utils import SubwordTokenizer
 from itertools import chain
 from collections import Counter, defaultdict
 from typing import List, Tuple, Dict
+from tqdm import tqdm
 
 class NaiveBPE(SubwordTokenizer):
     """A subword tokenizer based on the Byte-Pair Encoding (BPE) algorithm."""
@@ -80,6 +81,9 @@ class NaiveBPE(SubwordTokenizer):
             self.corpus_as_symbols.append((symbols, freq))
         # self.corpus_as_symbols contains past and new data now
 
+        # Progress bar setup
+        initial_vocab_size = len(self.vocab)
+        pbar = tqdm(total=max_vocab - initial_vocab_size, desc="Training BPE")
         # 4. Iteratively merge the most frequent symbol pairs
         while len(self.vocab) < max_vocab:
             # 4.1 Count symbol pair frequencies
@@ -98,12 +102,14 @@ class NaiveBPE(SubwordTokenizer):
             most_frequent_pair = get_pair_freqs.most_common(1)[0][0]
             self.vocab.add(most_frequent_pair[0] + most_frequent_pair[1])
             self.merges_list.append(most_frequent_pair)
+            pbar.update(1)
 
             # 4.3 Apply merge to entire corpus
             self.corpus_as_symbols = [
                 (self._replace_pair(most_frequent_pair, seq), freq)
                 for seq, freq in self.corpus_as_symbols
             ]
+        pbar.close()
 
     def encode_word(self, word: str) -> List[str]:
         """
