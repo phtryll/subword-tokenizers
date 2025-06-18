@@ -171,7 +171,7 @@ print("FastBPE tokens:        ", loaded_fast_bpe.tokenize(text))
 print("NaiveWordPiece tokens: ", loaded_naive_wp.tokenize(text))
 print("FastWordPiece tokens:  ", loaded_fast_wp.tokenize(text))
 
-# 8. Benchmark tokenizers against each other (tokenization)
+# 7. Benchmark tokenizers against each other (tokenization)
 benchmarks(
     loaded_naive_bpe,
     max_vocab_size=25,
@@ -180,7 +180,7 @@ benchmarks(
     reference_tokenizers=[loaded_fast_bpe, loaded_naive_wp, loaded_fast_wp]
 )
 
-# 9. Benchmark tokenizers against each other (training)
+# 8. Benchmark tokenizers against each other (training)
 benchmarks(
     loaded_naive_bpe,
     max_vocab_size=25,
