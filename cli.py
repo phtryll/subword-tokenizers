@@ -108,10 +108,16 @@ def main():
     # Benchmark models
     parser.add_argument(
         "-b", "--benchmark",
-        nargs=2,
+        nargs=1,
         type=str,
-        metavar=("TEST_INPUT", "TRAIN_INPUT"),
-        help="benchmark models: TEST_INPUT (string or .json file) and TRAIN_INPUT (.json file path)"
+        metavar="INPUT",
+        help="benchmark models: with --pretrained, INPUT is TEST_INPUT; without --pretrained, INPUT is TRAIN_INPUT"
+    )
+
+    parser.add_argument(
+        "-c", "--compare",
+        action="store_true",
+        help="with --pretrained, only run token-sequence equivalence between models"
     )
     
     # Reset pretrained resources for selected models
@@ -200,45 +206,77 @@ def main():
 
     # Benchmark stage
     if args.benchmark:
-        # Extract test and train inputs
-        test_input_arg, train_input_arg = args.benchmark
+        # Single INPUT for benchmark
+        b_arg = args.benchmark[0]
 
-        # Load test inputs: string or .json file
-        if os.path.isfile(test_input_arg) and test_input_arg.lower().endswith('.json'):
-            with open(test_input_arg, "r", encoding="utf-8") as f:
-                test_inputs = json.load(f)
+        # Load or skip test inputs
+        if args.pretrained:
+            test_input_arg = b_arg
+            if os.path.isfile(test_input_arg) and test_input_arg.lower().endswith('.json'):
+                with open(test_input_arg, "r", encoding="utf-8") as f:
+                    test_inputs = json.load(f)
+            else:
+                test_inputs = [test_input_arg]
+            train_inputs = []
         else:
-            test_inputs = [test_input_arg]
+            # Training-only mode: only TRAIN_INPUT is provided
+            train_input_arg = b_arg
+            if not os.path.isfile(train_input_arg) or not train_input_arg.lower().endswith('.json'):
+                parser.error("--benchmark requires TRAIN_INPUT to be a valid .json file path")
+            with open(train_input_arg, "r", encoding="utf-8") as f:
+                train_inputs = json.load(f)
+            test_inputs = []
 
-        # Load training inputs: must be .json file path
-        if not os.path.isfile(train_input_arg) or not train_input_arg.lower().endswith('.json'):
-            parser.error("--benchmark requires TRAIN_INPUT to be a valid .json file path")
-        with open(train_input_arg, "r", encoding="utf-8") as f:
-            train_inputs = json.load(f)
-
-        # Determine primary and other tokenizers
+        # Determine primary and additional tokenizers
         model_names = list(tokenizer_instances.keys())
         models = list(tokenizer_instances.values())
         primary = models[0]
         primary_name = model_names[0]
         others = models[1:]
+        # compare-only requires pretrained + at least two models
+        if args.compare and not args.pretrained:
+            parser.error("--compare may only be used with --pretrained")
+        if args.compare and len(models) < 2:
+            parser.error("--compare requires at least two tokenizers")
 
         # Run benchmarks
         if not others:
-            # Single model case
-            print(f"Benchmarking {primary_name} alone on {len(test_inputs)} inputs and {len(train_inputs)} training examples with max_vocab={args.max_vocab}...")
-            benchmarks(primary, test_inputs, args.max_vocab, train_inputs)
+            print(
+                f"Benchmarking {primary_name} {'(pretrained)' if args.pretrained else ''}{'' if not train_inputs else f'with {len(train_inputs)} training examples'}..."
+            )
+            benchmarks(
+                primary,
+                test_inputs,
+                args.max_vocab,
+                train_inputs,
+                pretrained=bool(args.pretrained),
+                pretrained_path=args.pretrained
+                , compare_only=args.compare
+            )
             print()
         else:
-            # Multi-model case: benchmark primary against all others
             other_names = model_names[1:]
             print(
                 f"Benchmarking {primary_name} vs {' and '.join(other_names)} "
-                f"on {len(test_inputs)} inputs and {len(train_inputs)} "
-                f"training examples with max_vocab={args.max_vocab}..."
+                f"{'(pretrained)' if args.pretrained else ''}{'' if not train_inputs else f'with {len(train_inputs)} training examples'}..."
             )
-            benchmarks(primary, test_inputs, args.max_vocab, train_inputs, others)
+            benchmarks(
+                primary,
+                test_inputs,
+                args.max_vocab,
+                train_inputs,
+                others,
+                pretrained=bool(args.pretrained),
+                pretrained_path=args.pretrained
+                , compare_only=args.compare
+            )
             print()
+    # Save resources if requested
+    if args.save:
+        for name, tok in tokenizer_instances.items():
+            resource_path = os.path.join("resources", args.save, name)
+            tok.save_resources(resource_path)
+            print(f"Saved merges and vocab for {name} to {resource_path}")
 
 # Runs the CLI
 if __name__ == "__main__":

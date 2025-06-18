@@ -3,6 +3,7 @@ import json
 from source.utils import SubwordTokenizer, WPTrie_E2E
 from collections import Counter
 from typing import List, Tuple, Dict
+from tqdm import tqdm
 
 class NaiveWP(SubwordTokenizer):
     """
@@ -60,6 +61,9 @@ class NaiveWP(SubwordTokenizer):
         initial_symbols = {s for symbols, _ in new_symbols for s in symbols}
         self.vocab |= initial_symbols
         
+        # Progress bar setup
+        initial_vocab_size = len(self.vocab)
+        pbar = tqdm(total=max_vocab - initial_vocab_size, desc="Training WordPiece")
         # -- Main loop - initialize until max_vocab is reached
         while len(self.vocab) < max_vocab:
             # Get frequencies of adjacent symbol pairs
@@ -90,11 +94,13 @@ class NaiveWP(SubwordTokenizer):
             # Add merged token to vocab
             merged_token = best_pair[0] + best_pair[1][2:]
             self.vocab.add(merged_token)
+            pbar.update(1)
             # Replace the pair in corpus
             self.corpus_as_symbols = [
                 (self._replace_pair(best_pair, symbols), freq)
                 for symbols, freq in self.corpus_as_symbols
             ]
+        pbar.close()
 
     def _replace_pair(self, pair, word):
         """

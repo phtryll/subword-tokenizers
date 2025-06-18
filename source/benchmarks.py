@@ -32,164 +32,84 @@ from collections import Counter
 from typing import List, Tuple, Dict, Any
 
 
-def avg_tokens_per_sentence(tokenizer: Any, input: List[str]) -> float:
+def avg_tokens_per_sentence(tokenized_sents: List[List[str]]) -> float:
     """
-    Compute the average number of tokens per sentence for a given tokenizer.
-
+    Compute the average number of tokens per sentence from pre-tokenized data.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        tokenized_sents (List[List[str]]): List of tokenized sentences.
     Returns:
         float: Average number of tokens per sentence.
     """
-    
-    # 1. Input validation
-    if not input:
+    if not tokenized_sents:
         return 0.0
-    
-    # 2. Tokenize each sentence and count tokens
-    total_tokens = sum(len(tokenizer.tokenize(sentence)) for sentence in input)
-    
-    # 3. Compute average tokens per sentence
-    return total_tokens / len(input)
+    return sum(len(ts) for ts in tokenized_sents) / len(tokenized_sents)
 
 
-def avg_tokens_per_word(tokenizer: Any, input: List[str]) -> float:
+def avg_tokens_per_word(tokenized_words: Dict[str, List[str]]) -> float:
     """
-    Compute the average number of subword tokens per word.
-
+    Compute the average number of subword tokens per word from pre-tokenized words.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        tokenized_words (Dict[str, List[str]]): Mapping from word to its tokenized form.
     Returns:
         float: Average number of tokens per word.
     """
-    
-    # 1. Gather unique words from all sentences
-    words = {word for sentence in input for word in sentence.split()}
-    if not words:
+    if not tokenized_words:
         return 0.0
-
-    # 2. Count tokens for each word
-    total_tokens = sum(len(tokenizer.tokenize(word)) for word in words)
-
-    # 3. Compute average tokens per word
-    return total_tokens / len(words)
+    return sum(len(ws) for ws in tokenized_words.values()) / len(tokenized_words)
 
 
-def normalized_sequence_length(tokenizer: Any, input: List[str]) -> float:
+def normalized_sequence_length(total_tokens: int, total_chars: int) -> float:
     """
-    Compute normalized sequence length: the tokenizer's total tokens divided 
-    by the baseline character-level token count (each character as a token).
-
+    Compute normalized sequence length: total tokens divided by total characters.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        total_tokens (int): Total number of tokens.
+        total_chars (int): Total number of characters.
     Returns:
-        float: Total tokens divided by total characters in the input.
+        float: Total tokens divided by total characters.
     """
-    
-    # 1. Validate input
-    if not input:
-        return 0.0
-    
-    # 2. Compute the number of tokens
-    total_tokens = sum(len(tokenizer.tokenize(sentence)) for sentence in input)
-    
-    # 3. Compute the baseline if the input is split into individual characters
-    total_chars = sum(len(token) for sentence in input for token in sentence)
-    
-    # 4. Return the normalized sequence length (avoid division by zero)
     return total_tokens / total_chars if total_chars else float('inf')
 
 
-def subword_fragmentation_rate(tokenizer: Any, input: List[str]) -> float:
+def subword_fragmentation_rate(tokenized_words: Dict[str, List[str]]) -> float:
     """
-    Compute the subword fragmentation rate: the percentage of unique words
-    that are split into multiple subword tokens.
-
+    Compute the subword fragmentation rate from pre-tokenized words.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        tokenized_words (Dict[str, List[str]]): Mapping from word to its tokenized form.
     Returns:
         float: Percentage of unique words split into multiple subword tokens.
     """
-
-    # 1. Gather unique words from all sentences
-    words = {word for sentence in input for word in sentence.split()}
-    if not words:
+    if not tokenized_words:
         return 0.0
-
-    # 2. Count unique words that are split into subwords
-    split_words = sum(
-        1
-        for word in words
-        if len(tokenizer.tokenize(word)) > 1
-    )
-
-    # 3. Compute fragmentation rate as a percentage
-    return split_words / len(words) * 100
+    split_words = sum(1 for ws in tokenized_words.values() if len(ws) > 1)
+    return split_words / len(tokenized_words) * 100
 
 
-def vocabulary_coverage_rate(tokenizer: Any, input: List[str]) -> float:
+def vocabulary_coverage_rate(tokenized_words: Dict[str, List[str]]) -> float:
     """
-    Compute vocabulary coverage: the percentage of unique full words
-    in the input input that the tokenizer recognizes as single tokens.
-
+    Compute vocabulary coverage from pre-tokenized words.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        tokenized_words (Dict[str, List[str]]): Mapping from word to its tokenized form.
     Returns:
         float: Percentage of unique words tokenized as exactly one token.
     """
-    
-    # 1. Gather unique words from all sentences
-    words = {word for sentence in input for word in sentence.split()}
-    if not words:
+    if not tokenized_words:
         return 0.0
-
-    # 2. Count words tokenized as exactly one token (no splitting)
-    covered = sum(1 for word in words if len(tokenizer.tokenize(word)) == 1) #! Same as before
-
-    # 3. Compute coverage as a percentage
-    return covered / len(words) * 100
+    covered = sum(1 for ws in tokenized_words.values() if len(ws) == 1)
+    return covered / len(tokenized_words) * 100
 
 
-def compression_rate(tokenizer: Any, input: List[str]) -> float:
+def compression_rate(total_chars: int, tokenized_sents: List[List[str]]) -> float:
     """
     Compute the compression rate: ratio of total non-space characters
-    to total number of subword tokens. Basically computes the average number
-    of characters per subword token.
-
+    to total number of subword tokens, using pre-tokenized sentences.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        total_chars (int): Total number of non-space characters.
+        tokenized_sents (List[List[str]]): List of tokenized sentences.
     Returns:
         float: Compression rate (characters per subword token).
     """
-    
-    # 1. Input validation
-    if not input:
-        return 0.0
-
-    # 2. Count total non-space characters
-    total_chars = sum(len(sentence.replace(" ", "")) for sentence in input)
-    
-    # 3. Count total number of subword tokens
-    total_subwords = sum(len(tokenizer.tokenize(sentence)) for sentence in input)
-
-    # 4. Avoid division by zero
-    if total_subwords == 0:
-        return float('inf')
-
-    # 5. Compute compression rate (characters per subword token)
-    return total_chars / total_subwords
+    total_subs = sum(len(ts) for ts in tokenized_sents)
+    return total_chars / total_subs if total_subs else float('inf')
 
 
 def token_sequence_equivalence(
@@ -353,39 +273,27 @@ def training_performance(tokenizer: Any, test_corpus: List[str], max_vocab_size:
     }
 
 
-def zipf_distribution(tokenizer: Any, input: List[str]) -> Dict[str, float]:
+def zipf_distribution(tokenized_sents: List[List[str]]) -> Dict[str, float]:
     """
-    Analyze token frequency distribution and compute Zipf's law fit.
-
+    Analyze token frequency distribution and compute Zipf's law fit from pre-tokenized sentences.
     Args:
-        tokenizer (Any): Tokenizer with a `tokenize` method.
-        input (List[str]): List of input sentences.
-
+        tokenized_sents (List[List[str]]): List of tokenized sentences.
     Returns:
         Dict[str, float]: Contains 'slope', 'intercept', and 'correlation' of the log-log fit.
     """
-    
-    # 1. Tokenize all input and flatten
-    all_tokens = [token for sentence in input for token in tokenizer.tokenize(sentence)]
-    
-    # 2. Compute token frequencies and prepare ranks
+    all_tokens = [tok for seq in tokenized_sents for tok in seq]
     frequency = Counter(all_tokens)
-    ranks = list(range(1, len(frequency) + 1))
-    
-    # 3. Sort frequencies in descending order and prepare ranks
     frequency_sorted = [count for _, count in frequency.most_common()]
-    
-    # 4. Compute log-rank and log-frequency
-    log_ranks = [math.log(rank) for rank in ranks]
-    log_frequencies = [math.log(freq) for freq in frequency_sorted]
-    
-    # 5. Linear regression on log-log data
-    n = len(log_ranks)
+    ranks = list(range(1, len(frequency_sorted) + 1))
+    import math
+    log_ranks = [math.log(r) for r in ranks]
+    log_freqs = [math.log(f) for f in frequency_sorted]
+    n = len(ranks)
     mean_x = sum(log_ranks) / n
-    mean_y = sum(log_frequencies) / n
-    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(log_ranks, log_frequencies))
+    mean_y = sum(log_freqs) / n
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(log_ranks, log_freqs))
     var_x = sum((x - mean_x) ** 2 for x in log_ranks)
-    var_y = sum((y - mean_y) ** 2 for y in log_frequencies)
+    var_y = sum((y - mean_y) ** 2 for y in log_freqs)
     slope = cov / var_x if var_x else 0.0
     intercept = mean_y - slope * mean_x
     correlation = cov / math.sqrt(var_x * var_y) if var_x and var_y else 0.0
@@ -399,7 +307,8 @@ def benchmarks(
     train_corpus: List[str] = [],
     reference_tokenizers: List[Any] = [],
     pretrained: bool = False,
-    pretrained_path: str = ""
+    pretrained_path: str = "",
+    compare_only: bool = False
 ) -> None:
     """
     Run all benchmark functions and print results to the console.
@@ -412,114 +321,106 @@ def benchmarks(
         reference_tokenizers (List[Any], optional): List of additional tokenizers for equivalence and comparison metrics.
     """
 
-    # Get the names of the tokenizers
+    # Determine tokenizer name
     name1 = tokenizer.__class__.__name__
+    # Compare-only mode: just token-sequence equivalence
+    if pretrained and compare_only:
+        if not reference_tokenizers:
+            print("No reference tokenizers provided for comparison.")
+            return
+        for opt_tok in reference_tokenizers:
+            name2 = opt_tok.__class__.__name__
+            (
+                total_pos, total_positions, pos_rate,
+                total_unord, unord_rate,
+                total_wmatch, total_words, wmatch_rate
+            ) = token_sequence_equivalence(tokenizer, opt_tok, test_corpus)
+            print(f"=== Token Sequence Equivalence ({name1} vs {name2}) ===")
+            print(f"Positional match rate: {pos_rate:.2f}% ({total_pos}/{total_positions})")
+            print(f"Unordered match rate:  {unord_rate:.2f}% ({total_unord}/{total_positions})")
+            print(f"Word match rate:       {wmatch_rate:.2f}% ({total_wmatch}/{total_words})")
+        return
 
     if pretrained:
+        # Tokenization-only mode
         tokenizer.load_resources(pretrained_path)
+        # Pre-tokenize once for this tokenizer
+        tokenized_sents = [tokenizer.tokenize(s) for s in test_corpus]
+        unique_words = {w for s in test_corpus for w in s.split()}
+        tokenized_words = {w: tokenizer.tokenize(w) for w in unique_words}
+        total_chars = sum(len(s.replace(' ', '')) for s in test_corpus)
+        total_tokens = sum(len(ts) for ts in tokenized_sents)
+
+        print(f"=== Tokenization Metrics for {name1} ===")
+        print(f"Average tokens per sentence:        {avg_tokens_per_sentence(tokenized_sents):.2f}")
+        print(f"Average tokens per word:            {avg_tokens_per_word(tokenized_words):.2f}")
+        print(f"Compression rate (chars per token): {compression_rate(total_chars, tokenized_sents):.2f}")
+        print(f"Normalized sequence length:         {normalized_sequence_length(total_tokens, total_chars):.4f}")
+        print(f"Subword fragmentation rate:         {subword_fragmentation_rate(tokenized_words):.2f}%")
+        print(f"Vocabulary coverage rate:           {vocabulary_coverage_rate(tokenized_words):.2f}%")
+
+        print("\n=== Tokenization Performance ===")
+        perf = tokenization_performance(tokenizer, test_corpus)
+        print(f"Total time:     {perf['total_time_s']:.4f}s")
+        print(f"Throughput:     {perf['throughput_tokens_per_s']:.2f} tokens/s")
+        print(f"Avg. latency:   {perf['avg_latency_s']:.6f}s per sentence")
+        print(f"Peak memory:    {perf['peak_memory_mb']:.2f} MB")
+
+        print("\n=== Zipf Distribution Fit ===")
+        zipf_res = zipf_distribution(tokenized_sents)
+        print(f"Slope:          {zipf_res['slope']:.4f}")
+        print(f"Intercept:      {zipf_res['intercept']:.4f}")
+        print(f"Correlation:    {zipf_res['correlation']:.4f}")
+
+        # Compare additional tokenizers on tokenization metrics
+        if reference_tokenizers:
+            for opt_tok in reference_tokenizers:
+                name2 = opt_tok.__class__.__name__
+                opt_tok.load_resources(pretrained_path)
+                # Pre-tokenize once for this reference tokenizer
+                tokenized_sents2 = [opt_tok.tokenize(s) for s in test_corpus]
+                unique_words2 = {w for s in test_corpus for w in s.split()}
+                tokenized_words2 = {w: opt_tok.tokenize(w) for w in unique_words2}
+                total_chars2 = total_chars
+                total_tokens2 = sum(len(ts) for ts in tokenized_sents2)
+
+                print(f"\n=== Tokenization Metrics for {name2} ===")
+                print(f"Average tokens per sentence:        {avg_tokens_per_sentence(tokenized_sents2):.2f}")
+                print(f"Average tokens per word:            {avg_tokens_per_word(tokenized_words2):.2f}")
+                print(f"Compression rate (chars per token): {compression_rate(total_chars2, tokenized_sents2):.2f}")
+                print(f"Normalized sequence length:         {normalized_sequence_length(total_tokens2, total_chars2):.4f}")
+                print(f"Subword fragmentation rate:         {subword_fragmentation_rate(tokenized_words2):.2f}%")
+                print(f"Vocabulary coverage rate:           {vocabulary_coverage_rate(tokenized_words2):.2f}%")
+
+                print("\n=== Tokenization Performance ===")
+                perf2 = tokenization_performance(opt_tok, test_corpus)
+                print(f"Total time:     {perf2['total_time_s']:.4f}s")
+                print(f"Throughput:     {perf2['throughput_tokens_per_s']:.2f} tokens/s")
+                print(f"Avg. latency:   {perf2['avg_latency_s']:.6f}s per sentence")
+                print(f"Peak memory:    {perf2['peak_memory_mb']:.2f} MB")
+
+                print("\n=== Zipf Distribution Fit ===")
+                zipf_res2 = zipf_distribution(tokenized_sents2)
+                print(f"Slope:          {zipf_res2['slope']:.4f}")
+                print(f"Intercept:      {zipf_res2['intercept']:.4f}")
+                print(f"Correlation:    {zipf_res2['correlation']:.4f}")
+
     else:
+        # Training-only mode
         if not train_corpus:
-            raise ValueError("train_corpus is required when not using a pretrained tokenizer.")
-        # Train on the given data
-        tokenizer.train(train_corpus, max_vocab_size)
-
-    # Run metrics
-    print(f"=== Tokenization Benchmarks for {name1} ===")
-    
-    avg_tokens = avg_tokens_per_sentence(tokenizer, test_corpus)
-    print(f"Average tokens per sentence:        {avg_tokens:.2f}")
-    
-    avg_tpw = avg_tokens_per_word(tokenizer, test_corpus)
-    print(f"Average tokens per word:            {avg_tpw:.2f}")
-
-    comp_rate = compression_rate(tokenizer, test_corpus)
-    print(f"Compression rate (chars per token): {comp_rate:.2f}")
-    
-    ns_len = normalized_sequence_length(tokenizer, test_corpus)
-    print(f"Normalized sequence length:         {ns_len:.4f}")
-
-    frag_rate = subword_fragmentation_rate(tokenizer, test_corpus)
-    print(f"Subword fragmentation rate:         {frag_rate:.2f}%")
-
-    vocab_cov = vocabulary_coverage_rate(tokenizer, test_corpus)
-    print(f"Vocabulary coverage rate:           {vocab_cov:.2f}%")
-
-    print("\n=== Tokenization Performance ===")
-    perf = tokenization_performance(tokenizer, test_corpus)
-    print(f"Total time:     {perf['total_time_s']:.4f}s")
-    print(f"Throughput:     {perf['throughput_tokens_per_s']:.2f} tokens/s")
-    print(f"Avg. latency:   {perf['avg_latency_s']:.6f}s per sentence")
-    print(f"Peak memory:    {perf['peak_memory_mb']:.2f} MB")
-
-    if not pretrained:
-        print("\n=== Training Performance ===")
+            raise ValueError("train_corpus is required for training metrics.")
+        print(f"=== Training Performance for {name1} ===")
         train_perf = training_performance(tokenizer, train_corpus, max_vocab_size)
         print(f"Training time:  {train_perf['train_time_s']:.4f}s")
         print(f"Peak memory:    {train_perf['peak_memory_mb']:.2f} MB")
         print(f"Num. merges:    {int(train_perf['num_merges'])}")
 
-        print("\n=== Zipf Distribution Fit ===")
-        zipf_res = zipf_distribution(tokenizer, train_corpus)
-        print(f"Slope:          {zipf_res['slope']:.4f}")
-        print(f"Intercept:      {zipf_res['intercept']:.4f}")
-        print(f"Correlation:    {zipf_res['correlation']:.4f}")
-
-    # If additional tokenizers were provided, run the same metrics for each
-    if reference_tokenizers:
-        for optional_tokenizer in reference_tokenizers:
-            other_name = optional_tokenizer.__class__.__name__
-            optional_tokenizer.train(train_corpus, max_vocab_size)
-            
-            print(f"\n=== Tokenization Benchmarks for {other_name} ===")
-            avg_tokens_ref = avg_tokens_per_sentence(optional_tokenizer, test_corpus)
-            print(f"Average tokens per sentence:        {avg_tokens_ref:.2f}")
-            avg_tpw_ref = avg_tokens_per_word(optional_tokenizer, test_corpus)
-            print(f"Average tokens per word:            {avg_tpw_ref:.2f}")
-            
-            comp_rate_ref = compression_rate(optional_tokenizer, test_corpus)
-            print(f"Compression rate (chars per token): {comp_rate_ref:.2f}")
-            
-            ns_len_ref = normalized_sequence_length(optional_tokenizer, test_corpus)
-            print(f"Normalized sequence length:         {ns_len_ref:.4f}")
-            
-            frag_rate_ref = subword_fragmentation_rate(optional_tokenizer, test_corpus)
-            print(f"Subword fragmentation rate:         {frag_rate_ref:.2f}%")
-            
-            vocab_cov_ref = vocabulary_coverage_rate(optional_tokenizer, test_corpus)
-            print(f"Vocabulary coverage rate:           {vocab_cov_ref:.2f}%")
-            
-            # Equivalence metrics
-            print(f"\n=== Token Sequence Equivalence ({name1} vs. {other_name}) ===")
-            (
-                total_pos_matches,
-                total_positions,
-                positional_rate,
-                total_unordered_matches,
-                unordered_rate,
-                total_word_matches,
-                total_words,
-                word_match_rate
-            ) = token_sequence_equivalence(tokenizer, optional_tokenizer, test_corpus)
-            print(f"Positional match rate: {positional_rate:.2f}% ({total_pos_matches}/{total_positions})")
-            print(f"Unordered match rate:  {unordered_rate:.2f}% ({total_unordered_matches}/{total_positions})")
-            print(f"Word match rate:       {word_match_rate:.2f}% ({total_word_matches}/{total_words})")
-            
-            # Performance metrics for reference
-            print(f"\n=== Tokenization Performance for {other_name} ===")
-            perf_ref = tokenization_performance(optional_tokenizer, test_corpus)
-            print(f"Total time:     {perf_ref['total_time_s']:.4f}s")
-            print(f"Throughput:     {perf_ref['throughput_tokens_per_s']:.2f} tokens/s")
-            print(f"Avg. latency:   {perf_ref['avg_latency_s']:.6f}s per sentence")
-            print(f"Peak memory:    {perf_ref['peak_memory_mb']:.2f} MB")
-            
-            print(f"\n=== Training Performance for {other_name} ===")
-            train_perf_ref = training_performance(optional_tokenizer, train_corpus, max_vocab_size)
-            print(f"Training time:  {train_perf_ref['train_time_s']:.4f}s")
-            print(f"Peak memory:    {train_perf_ref['peak_memory_mb']:.2f} MB")
-            print(f"Num. merges:    {int(train_perf_ref['num_merges'])}")
-            
-            print(f"\n=== Zipf Distribution Fit for {other_name} ===")
-            zipf_res_ref = zipf_distribution(optional_tokenizer, train_corpus)
-            print(f"Slope:          {zipf_res_ref['slope']:.4f}")
-            print(f"Intercept:      {zipf_res_ref['intercept']:.4f}")
-            print(f"Correlation:    {zipf_res_ref['correlation']:.4f}")
+        # Compare additional tokenizers on training performance
+        if reference_tokenizers:
+            for opt_tok in reference_tokenizers:
+                name2 = opt_tok.__class__.__name__
+                print(f"\n=== Training Performance for {name2} ===")
+                train_perf2 = training_performance(opt_tok, train_corpus, max_vocab_size)
+                print(f"Training time:  {train_perf2['train_time_s']:.4f}s")
+                print(f"Peak memory:    {train_perf2['peak_memory_mb']:.2f} MB")
+                print(f"Num. merges:    {int(train_perf2['num_merges'])}")

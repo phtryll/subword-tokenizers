@@ -51,11 +51,11 @@ def main() -> None:
         dataset_splits[split] = load_dataset("ipipan/nlprepl", name="by_name-nkjp-conllu", split=split)
 
     # Combine all splits into one dataset
-    combined = build_dataset(dataset_splits, feature_name='text', num_examples=10)
+    combined = build_dataset(dataset_splits, feature_name='text', num_examples=5000)
     print(f"Splits combined." if combined else "No data loaded.")
 
     # Ensure the output directory exists
-    output_path = 'data/testing-test.json'
+    output_path = 'data/train-1000.json'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Save combined dataset to a JSON file
