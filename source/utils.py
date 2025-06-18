@@ -59,8 +59,8 @@ class TrieNode:
         # For linear/max-match tokenization: failure link and pops
         self.failure_pops = []
         self.failure_link = None
-        # Vx is the string spelled out by the path to this node
-        self.Vx = char
+        # chars_seen is the string spelled out by the path to this node
+        self.chars_seen = char
         
 
 class WPTrie_E2E(object):
@@ -96,8 +96,8 @@ class WPTrie_E2E(object):
             else:
                 # Create a new node for this character
                 new_node = TrieNode(char)
-                # Set Vx to be the path string up to this node
-                new_node.Vx = node.Vx + char
+                # Set chars_seen to be the path string up to this node
+                new_node.chars_seen = node.chars_seen + char
                 node.children[char] = new_node
                 node = new_node
         # Mark this node as the end of a valid token
@@ -113,30 +113,30 @@ class WPTrie_E2E(object):
         # Original Precomputation (copied and extended)
         r = self.root
         r_sharp = self.root_sharp
-        v_queue = [r, r_sharp]
-        while len(v_queue) > 0:
-            u = v_queue.pop(0)
-            for c, v in u.children.items():
-                if v == r_sharp:
+        node_queue = [r, r_sharp]
+        while len(node_queue) > 0:
+            curr_node = node_queue.pop(0)
+            for child_char, child_node in curr_node.children.items():
+                if child_node == r_sharp:
                     continue
-                if v.is_end:
-                    v.failure_link = r_sharp
-                    v.failure_pops = [v.Vx]
+                if child_node.is_end:
+                    child_node.failure_link = r_sharp
+                    child_node.failure_pops = [child_node.chars_seen]
                 else:
-                    z = u.failure_link
-                    Z = []
-                    while z is not None and c not in z.children:
-                        Z.extend(z.failure_pops)
-                        z = z.failure_link
-                    if z is not None:
-                        v.failure_link = z.children[c]
-                        v.failure_pops = u.failure_pops + Z
+                    fail_node = curr_node.failure_link
+                    fail_pops = []
+                    while fail_node is not None and child_char not in fail_node.children:
+                        fail_pops.extend(fail_node.failure_pops)
+                        fail_node = fail_node.failure_link
+                    if fail_node is not None:
+                        child_node.failure_link = fail_node.children[child_char]
+                        child_node.failure_pops = curr_node.failure_pops + fail_pops
                 # Modification for E2E:
-                # For nodes whose character is punctuation (not alphanumeric),
+                # For nodes whose character is punctuation (defined here as not alphanumeric),
                 # set their failure link to the special punctuation root node.
-                if not v.char.isalnum():
-                    v.failure_link = self.root_p
-                v_queue.append(v)
+                if not child_node.char.isalnum():
+                    child_node.failure_link = self.root_p
+                node_queue.append(child_node)
 
 def recover_sentence(tokens):
   # This function does NOT reliably reconstruct the

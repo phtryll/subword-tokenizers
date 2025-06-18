@@ -244,14 +244,14 @@ class FastWP(NaiveWP):
 
         while i < len(s):
             # Step 1: Use the trie to match as many tokens as possible from position i
-            tokens, u, i = self.matchloop(s, i)
-            # Step 2: Validate if the match ends at a word boundary and at an allowed node
-            if not self.iswdbndry(s, i) or u not in {self.vocab_trie.root, self.vocab_trie.root_sharp, self.vocab_trie.root_p}:
+            tokens, node, i = self.matchloop(s, i)
+            # Step 2: Validate if the match ends at a word boundary and at a root node
+            if not self.iswdbndry(s, i) or node not in {self.vocab_trie.root, self.vocab_trie.root_sharp, self.vocab_trie.root_p}:
                 # If not a valid boundary, treat as unknown
                 tokens = ["['UNK']"]
             else:
-                # If at root_sharp and no tokens, fallback to encoding "##"
-                if u == self.vocab_trie.root_sharp and len(tokens) == 0:
+                # Handling corner case so that encoding of "##" matches original WordPiece
+                if node == self.vocab_trie.root_sharp and len(tokens) == 0:
                     tokens = super().encode_word("##")
             # Step 3: Add the tokens from this segment to the result
             result.extend(tokens)
@@ -263,9 +263,10 @@ class FastWP(NaiveWP):
                 i = i + 1
         return result
 
-    def iswdbndry(self, s, i):
+    def iswdbndry(self, seq, i):
         """
         Check if the current index is at a word or punctuation boundary.
+        Defining punctuation as any non-alphanumeric character
 
         Args:
             s (str): Input string.
@@ -275,15 +276,15 @@ class FastWP(NaiveWP):
             bool: True if it's a word boundary, else False.
         """
         # At or past end of string, or previous char is not alnum, or current char is space or not alnum
-        return i > len(s) or (i > 0 and not s[i - 1].isalnum() or s[i].isspace() or not s[i].isalnum())
+        return i > len(seq) or (i > 0 and not seq[i - 1].isalnum() or seq[i].isspace() or not seq[i].isalnum())
 
 
-    def matchloop(self, s: str, i: int):
+    def matchloop(self, seq: str, i: int):
         """
         Traverse the WordPiece trie to find all matching subword tokens.
 
         Args:
-            s (str): Input string with trailing space.
+            seq (str): Input string with trailing space.
             i (int): Starting index.
 
         Returns:
@@ -291,14 +292,17 @@ class FastWP(NaiveWP):
         """
         node = self.vocab_trie.root
         tokens: List[str] = []
-        while i < len(s):
-            # no outgoing edge, follow failure links
-            while s[i] not in node.children:
-                if node.failure_link is None:
+
+        # process each character 
+        while i < len(seq):
+            # if no outgoing edge, perform failure transitions
+            while seq[i] not in node.children:
+                if node.failure_link is None: # exit matchloop if no more failure transitions to make
                     return tokens, node, i
                 tokens.extend(node.failure_pops)
                 node = node.failure_link
-            node = node.children[s[i]]
+            # read character and go to next node
+            node = node.children[seq[i]]
             i = i + 1
         return tokens, node, i
 
