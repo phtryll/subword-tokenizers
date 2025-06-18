@@ -124,38 +124,69 @@ python cli.py --model NaiveBPE --reset my_merges_dir
 
 ### Python API Tutorial
 
-You can also use the tokenizers directly from Python:
+You can use the tokenizers directly in Python to train, save, load, and run tokenization:
 
 ```python
 from transformers import AutoTokenizer
-from source.bpe import NaiveBPE
-from source.wordpiece import FastWordPiece
+from source.bpe import NaiveBPE, FastBPE
+from source.wordpiece import NaiveWP, FastWP
 from source.benchmarks import benchmarks
 
-# Initialize HuggingFace tokenizer
+# 1. Initialize HuggingFace tokenizer for normalization
 hf_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
-# Instantiate tokenizer models
+# 2. Instantiate tokenizer implementations
 naive_bpe = NaiveBPE(hf_tokenizer)
-fast_wp = FastWordPiece(hf_tokenizer)
+fast_bpe = FastBPE(hf_tokenizer)
+naive_wp = NaiveWP(hf_tokenizer)
+fast_wp = FastWP(hf_tokenizer)
 
-# Training
+# 3. Train tokenizers on a small corpus
 corpus = ["This is a sentence.", "Another example sentence."]
-naive_bpe.train(corpus, max_vocab_size=1000)
-fast_wp.train(corpus, max_vocab_size=1000)
+naive_bpe.train(corpus, max_vocab=25)
+fast_bpe.train(corpus, max_vocab=25)
+naive_wp.train(corpus, max_vocab=25)
+fast_wp.train(corpus, max_vocab=25)
 
-# Tokenization
-test_text = "Hello, world!"
-print("NaiveBPE:", naive_bpe.tokenize(test_text))
-print("FastWordPiece:", fast_wp.tokenize(test_text))
+# 4. Save trained models to resources/tests
+naive_bpe.save_resources("resources/tests/NaiveBPE")
+fast_bpe.save_resources("resources/tests/FastBPE")
+naive_wp.save_resources("resources/tests/NaiveWP")
+fast_wp.save_resources("resources/tests/FastWP")
 
-# Benchmarking
+# 5. Load pretrained models for inference
+loaded_naive_bpe = NaiveBPE(hf_tokenizer)
+loaded_naive_bpe.load_resources("resources/tests/NaiveBPE")
+loaded_fast_bpe = FastBPE(hf_tokenizer)
+loaded_fast_bpe.load_resources("resources/tests/FastBPE")
+loaded_naive_wp = NaiveWP(hf_tokenizer)
+loaded_naive_wp.load_resources("resources/tests/NaiveWP")
+loaded_fast_wp = FastWP(hf_tokenizer)
+loaded_fast_wp.load_resources("resources/tests/FastWP")
+
+# 6. Tokenize single sentences
+text = "This sentence is a new example."
+print("NaiveBPE tokens:       ", loaded_naive_bpe.tokenize(text))
+print("FastBPE tokens:        ", loaded_fast_bpe.tokenize(text))
+print("NaiveWordPiece tokens: ", loaded_naive_wp.tokenize(text))
+print("FastWordPiece tokens:  ", loaded_fast_wp.tokenize(text))
+
+# 8. Benchmark tokenizers against each other (tokenization)
 benchmarks(
-    naive_bpe,
-    [test_text],
-    max_vocab_size=1000,
+    loaded_naive_bpe,
+    max_vocab_size=25,
+    test_corpus=[text],
+    pretrained=True,
+    reference_tokenizers=[loaded_fast_bpe, loaded_naive_wp, loaded_fast_wp]
+)
+
+# 9. Benchmark tokenizers against each other (training)
+benchmarks(
+    loaded_naive_bpe,
+    max_vocab_size=25,
+    test_corpus=[text],
     train_corpus=corpus,
-    reference_tokenizers=[fast_wp]
+    reference_tokenizers=[loaded_fast_bpe, loaded_naive_wp, loaded_fast_wp]
 )
 ```
 
@@ -190,7 +221,7 @@ benchmarks(
 │   │   ├── FastWordPiece/
 │   │   ├── NaiveBPE/
 │   │   └── NaiveWordPiece/
-│   └── tests/                    # Directory to store user pretrained models (optional)
+│   └── tests/                    # Directory to store user pretrained models (ex: run README python API tutorial)
 ├── source/                       # Tokenizer implementations and benchmarks
 │   ├── benchmarks.py             # Python file with the benchmarking suite
 │   ├── bpe.py                    # Python file with the BPE implementations
