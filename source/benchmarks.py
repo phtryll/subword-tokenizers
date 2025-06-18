@@ -25,9 +25,7 @@ Various benchmarks to evaluate tokenizers:
        Run all benchmarks and print a summary of results to the console.
 """
 
-import time
-import math
-import tracemalloc
+from timeit import default_timer as timer
 from collections import Counter
 from typing import List, Tuple, Dict, Any
 
@@ -203,32 +201,20 @@ def tokenization_performance(tokenizer: Any, input: List[str]) -> Dict[str, floa
     Returns:
         Dict[str, float]: Metrics including total time, throughput, average latency, and peak memory in MB.
     """
-    
-    # 1. Start memory tracking
-    tracemalloc.start()
+    # Measure memory before and after
+    start_time = timer()
+    all_tokens = [tokenizer.tokenize(sentence) for sentence in input]
+    end_time = timer()
 
-    # 2. Measure tokenization time
-    start_time = time.perf_counter()
-    all_tokens = [tokenizer.tokenize(sentence) for sentence in input]  # Tokenize all input
-    end_time = time.perf_counter()
-
-    # 3. Get peak memory usage
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-
-    # 4. Compute timing and throughput metrics
     total_time = end_time - start_time
     total_tokens = sum(len(tokens_in_sentence) for tokens_in_sentence in all_tokens)
     throughput = total_tokens / total_time if total_time > 0 else float('inf')
     avg_latency = total_time / len(input) if input else 0.0
-    peak_memory = peak / (1024**2)  # Convert bytes to MB
 
-    # 5. Return all metrics in a dictionary
     return {
         "total_time_s": total_time,
         "throughput_tokens_per_s": throughput,
         "avg_latency_s": avg_latency,
-        "peak_memory_mb": peak_memory
     }
 
 
@@ -244,20 +230,10 @@ def training_performance(tokenizer: Any, test_corpus: List[str], max_vocab_size:
     Returns:
         Dict[str, float]: Metrics including training time, peak memory in MB, and number of merges.
     """
-    
-    # 1. Start memory tracking
-    tracemalloc.start()
-    
-    # 2. Measure training time
-    start_time = time.perf_counter()
+    start_time = timer()
     tokenizer.train(test_corpus, max_vocab_size)
-    end_time = time.perf_counter()
-    
-    # 3. Get peak memory usage
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    end_time = timer()
 
-    # 4. Determine number of merges (if available)
     if hasattr(tokenizer, 'merges_list'): #! `merges_list` is the name in naïve BPE
         num_merges = len(tokenizer.merges_list)
     elif hasattr(tokenizer, 'merges'): #! `merges` is the name in fast BPE
@@ -265,10 +241,8 @@ def training_performance(tokenizer: Any, test_corpus: List[str], max_vocab_size:
     else:
         num_merges = 0
 
-    # 5. Return performance metrics as a dictionary
     return {
         "train_time_s": end_time - start_time,
-        "peak_memory_mb": peak / (1024**2),
         "num_merges": float(num_merges)
     }
 
